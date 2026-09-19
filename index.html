@@ -1345,14 +1345,16 @@
           <table class="data-table" id="tabelData">
             <thead>
               <tr>
-                <th style="width:36%">Resi / pemilik</th>
-                <th style="width:33%">Nama / keterangan</th>
-                <th style="width:15%">Jenis</th>
-                <th style="width:16%">Aksi</th>
+                <th style="width:25%">Resi / pemilik</th>
+                <th style="width:22%">Nama / keterangan</th>
+                <th style="width:18%">Jumlah</th>
+                <th style="width:18%">Waktu</th>
+                <th style="width:10%">Jenis</th>
+                <th style="width:7%">Aksi</th>
               </tr>
             </thead>
             <tbody id="tb">
-              <tr class="state-row"><td colspan="4"><span class="spinner"></span>Memuat data…</td></tr>
+              <tr class="state-row"><td colspan="6"><span class="spinner"></span>Memuat data…</td></tr>
             </tbody>
           </table>
         </div>
@@ -2503,7 +2505,7 @@
 
     document.getElementById('tb').innerHTML = `
       <tr class="state-row-error">
-        <td colspan="4">
+        <td colspan="6">
           <div class="error-box">
             <div class="error-title"><i class="ti ti-alert-triangle"></i>Gagal memuat data</div>
             <p class="error-desc">Kemungkinan penyebabnya:</p>
@@ -2539,14 +2541,18 @@
         const nama = String(listDataMasuk[i][1] || '').trim();
         if (!kode && !nama) continue;
         const jam = listDataMasuk[i][3] || '';
-        rows.push({ kode, nama, jenis: 'masuk', idx: i, type: 'masuk', timestamp: jam, rowNum: i });
+        const jumlah = Number(listDataMasuk[i][2] || 0);
+        rows.push({ kode, nama, jumlah: jumlah || '—', waktu: jam || '—', jenis: 'masuk', idx: i, type: 'masuk', timestamp: jam, rowNum: i });
       }
       for (let i = 1; i < listDataKeluar.length; i++) {
         const kode = String(listDataKeluar[i][0] || '').trim();
         const nama = String(listDataKeluar[i][2] || '').trim();
         if (!kode && !nama) continue;
         const jam = listDataKeluar[i][7] || '';
-        rows.push({ kode, nama, jenis: 'keluar', idx: i, type: 'keluar', timestamp: jam, rowNum: i });
+        const fnb = Number(listDataKeluar[i][4] || 0);
+        const paket = Number(listDataKeluar[i][5] || 0);
+        const jumlah = (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—';
+        rows.push({ kode, nama, jumlah, waktu: jam || '—', jenis: 'keluar', idx: i, type: 'keluar', timestamp: jam, rowNum: i });
       }
       rows.sort((a, b) => {
         if (a.timestamp && b.timestamp) return b.timestamp.localeCompare(a.timestamp);
@@ -2557,14 +2563,16 @@
         const kode = String(listDataMasuk[i][0] || '').trim();
         const nama = String(listDataMasuk[i][1] || '').trim();
         if (!kode && !nama) continue;
-        rows.push({ kode, nama, jenis: 'masuk', idx: i, type: 'masuk' });
+        rows.push({ kode, nama, jumlah: Number(listDataMasuk[i][2] || 0) || '—', waktu: listDataMasuk[i][3] || '—', jenis: 'masuk', idx: i, type: 'masuk' });
       }
     } else if (filterMode === 'keluar') {
       for (let i = listDataKeluar.length - 1; i >= 1; i--) {
         const kode = String(listDataKeluar[i][0] || '').trim();
         const nama = String(listDataKeluar[i][2] || '').trim();
         if (!kode && !nama) continue;
-        rows.push({ kode, nama, jenis: 'keluar', idx: i, type: 'keluar' });
+        const fnb = Number(listDataKeluar[i][4] || 0);
+        const paket = Number(listDataKeluar[i][5] || 0);
+        rows.push({ kode, nama, jumlah: (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—', waktu: listDataKeluar[i][7] || '—', jenis: 'keluar', idx: i, type: 'keluar' });
       }
     }
 
@@ -2625,7 +2633,7 @@
     const halaman = allFilteredRows.slice(start, start + PAGE_SIZE);
 
     if (!halaman.length) {
-      tbody.innerHTML = `<tr class="state-row"><td colspan="4">Tidak ada data ditemukan</td></tr>`;
+      tbody.innerHTML = `<tr class="state-row"><td colspan="6">Tidak ada data ditemukan</td></tr>`;
       document.getElementById('paginationBar').classList.add('hidden');
       return;
     }
@@ -2635,6 +2643,8 @@
         <td style="font-family:${r.jenis==='masuk'?'monospace':'inherit'}; font-weight:500;"
             title="${r.kode}">${r.kode || '—'}</td>
         <td style="color:var(--text-secondary);" title="${r.nama}">${r.nama || '—'}</td>
+        <td style="color:var(--text-secondary); white-space:nowrap;">${r.jumlah || '—'}</td>
+        <td style="color:var(--text-secondary); font-size:.82rem; white-space:nowrap;">${r.waktu || '—'}</td>
         <td><span class="badge ${r.jenis}">${r.jenis==='masuk'?'↓ Masuk':'↑ Keluar'}</span></td>
         <td>
           <button class="tbl-btn edit" onclick="editData('${r.type}',${r.idx})" title="Edit">
