@@ -17,6 +17,9 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><text x='16' y='22' text-anchor='middle' font-size='18' fill='white'>📦</text></svg>">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%232563eb'/><text x='96' y='130' text-anchor='middle' font-size='110' fill='white'>📦</text></svg>">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1100,6 +1103,114 @@
       .dok-stats   { grid-template-columns: 1fr; }
       .dok-stat    { padding: 10px 12px; }
     }
+    /* ========== TEMA CERIA — TERINSPIRASI GAYA SAWERIA ========== */
+    :root {
+      --bg: #fff9ed;
+      --surface: #ffffff;
+      --surface-2: #fff1d5;
+      --border: #e9d9bd;
+      --border-strong: #292929;
+      --text-primary: #242424;
+      --text-secondary: #505050;
+      --text-muted: #77716a;
+      --accent: #79cbd8;
+      --accent-dark: #3293a4;
+      --accent-bg: #e6f8fa;
+      --accent-text: #176a78;
+      --green: #5dbd7c;
+      --green-bg: #e8faed;
+      --green-border: #a4dcaf;
+      --green-text: #20713b;
+      --amber: #ffb42c;
+      --amber-bg: #fff3d7;
+      --amber-border: #f5ce76;
+      --amber-text: #78500b;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --shadow-sm: 3px 3px 0 rgba(36,36,36,.14);
+      --shadow: 5px 5px 0 rgba(36,36,36,.16);
+    }
+
+    body {
+      font-family: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      background-color: var(--bg);
+      background-image: radial-gradient(#ffd98e 1px, transparent 1px);
+      background-size: 18px 18px;
+    }
+    input, button, select, textarea { font-family: inherit; }
+    #login-screen { background: linear-gradient(135deg, #fff1ca 0%, #ffd163 100%); }
+    .login-card, .stat-card, .table-card, .riwayat-top, .modal-content {
+      border: 2px solid var(--border-strong);
+      box-shadow: 6px 6px 0 rgba(36,36,36,.18);
+    }
+    .login-card { border-radius: 18px; }
+    .login-logo, .logo-icon { background: var(--accent); color: #1d3135; border: 2px solid var(--border-strong); }
+    .sidebar, .topbar { background: rgba(255,255,255,.96); border-color: var(--border-strong); }
+    .sidebar { border-right-width: 2px; }
+    .topbar { border-bottom-width: 2px; }
+    .nav-item { border: 1px solid transparent; }
+    .nav-item.active { background: var(--accent-bg); border-color: var(--border-strong); color: var(--text-primary); box-shadow: 2px 2px 0 rgba(36,36,36,.16); }
+    .btn { border: 2px solid var(--border-strong); box-shadow: 3px 3px 0 rgba(36,36,36,.85); font-weight: 700; }
+    .btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 rgba(36,36,36,.85); }
+    .btn-primary { background: var(--amber); color: #292929; }
+    .btn-primary:hover:not(:disabled) { background: #ffc352; }
+    .login-card .btn-primary { background: var(--accent); color: #202020; }
+    .login-card .btn-primary:hover:not(:disabled) { background: #94dbe5; }
+    .btn-ghost { background: #fff; color: var(--text-primary); }
+    .btn-danger { box-shadow: 3px 3px 0 rgba(129,35,35,.55); }
+    .action-big { border: 2px solid var(--border-strong); box-shadow: 4px 4px 0 rgba(36,36,36,.75); font-weight: 700; }
+    .action-big.blue { background: var(--accent); color: #202020; }
+    .action-big.green { background: var(--amber-bg); color: #5f4308; border-color: var(--border-strong); }
+    .data-table { min-width: 690px; }
+    .data-table thead th { background: #ffe1a0; color: #3d3322; border-bottom: 2px solid var(--border-strong); }
+    .filter-tab.active { color: #242424; border-color: var(--accent-dark); }
+    input:focus, textarea:focus { box-shadow: 3px 3px 0 rgba(121,203,216,.55); }
+    .badge { border: 1px solid rgba(36,36,36,.16); font-weight: 700; }
+    .user-avatar { background: var(--amber); color: #252525; border: 2px solid var(--border-strong); }
+    .trakteer-sidebar { background: linear-gradient(135deg, #ffb42c, #ff8f5c); color: #262626; border: 2px solid var(--border-strong); box-shadow: 3px 3px 0 rgba(36,36,36,.7); }
+    .tbl-btn.del {
+      width: 34px; height: 34px; margin-left: 4px;
+      background: #fff0ef; color: #c83e36;
+      border: 1.5px solid #c83e36; border-radius: 9px;
+    }
+    .tbl-btn.del:hover { background: #d94d43; color: #fff; }
+    .tbl-btn.del i { font-size: 18px; }
+
+    /* Dark mode dibuat lembut dan kontras, bukan sekadar versi hitam. */
+    html.dark {
+      --bg:#1f212a; --surface:#2a2d37; --surface-2:#363944;
+      --border:#525563; --border-strong:#eee3ce;
+      --text-primary:#fff8ed; --text-secondary:#e2dbcf; --text-muted:#bdb6ab;
+      --accent:#7fd3df; --accent-dark:#4baab9; --accent-bg:#253f47; --accent-text:#b8f0f6;
+      --green:#75d994; --green-bg:#183928; --green-border:#4b9b64; --green-text:#a4f2bb;
+      --amber:#ffc34f; --amber-bg:#49391a; --amber-border:#b99038; --amber-text:#ffe2a4;
+      --red:#ff8c85; --red-bg:#4c2428; --red-border:#a95258; --red-text:#ffc4bf;
+      --shadow-sm:3px 3px 0 rgba(0,0,0,.38); --shadow:5px 5px 0 rgba(0,0,0,.42);
+    }
+    html.dark body { background-color:#1f212a; background-image:radial-gradient(#f4d27d 1px, transparent 1px); }
+    html.dark .sidebar, html.dark .topbar { background:#2a2d37; border-color:#eee3ce; }
+    html.dark .login-card, html.dark .stat-card, html.dark .table-card, html.dark .riwayat-top, html.dark .modal-content { background:var(--surface); }
+    html.dark .data-table thead th { background:#f2c765; color:#302915; }
+    html.dark .btn-ghost { background:#363944; color:var(--text-primary); }
+    html.dark .btn-primary { color:#242424; }
+    html.dark .action-big.blue { color:#202020; }
+    html.dark .action-big.green { background:#49391a; color:#ffe2a4; }
+    html.dark .tbl-btn.del { background:#4c2428; border-color:#ff8c85; color:#ffc4bf; }
+    html.dark .tbl-btn.del:hover { background:#d94d43; color:#fff; }
+
+    /* Ponsel: kolom jumlah dibuat lebih ringkas agar angka paket tidak terpotong. */
+    @media (max-width: 768px) {
+      #tabelData { min-width: 680px; }
+      #tabelData th:nth-child(1) { width: 20% !important; }
+      #tabelData th:nth-child(2) { width: 18% !important; }
+      #tabelData th:nth-child(3) { width: 18% !important; }
+      #tabelData th:nth-child(4) { width: 17% !important; }
+      #tabelData th:nth-child(5) { width: 14% !important; }
+      #tabelData th:nth-child(6) { width: 13% !important; }
+      #tabelData tbody td { padding: 10px 8px; font-size: 11.5px; }
+      #tabelData tbody td:nth-child(3) { font-size: 10.5px; letter-spacing:-.04em; }
+      .tbl-btn.edit, .tbl-btn.del { margin:0 2px 0 0; }
+    }
   </style>
 </head>
 <body>
@@ -1345,12 +1456,12 @@
           <table class="data-table" id="tabelData">
             <thead>
               <tr>
-                <th style="width:25%">Resi / pemilik</th>
-                <th style="width:22%">Nama / keterangan</th>
+                <th style="width:23%">Resi / pemilik</th>
+                <th style="width:20%">Nama / keterangan</th>
                 <th style="width:18%">Jumlah</th>
-                <th style="width:18%">Waktu</th>
+                <th style="width:17%">Waktu</th>
                 <th style="width:10%">Jenis</th>
-                <th style="width:7%">Aksi</th>
+                <th style="width:12%">Aksi</th>
               </tr>
             </thead>
             <tbody id="tb">
@@ -2551,7 +2662,7 @@
         const jam = listDataKeluar[i][7] || '';
         const fnb = Number(listDataKeluar[i][4] || 0);
         const paket = Number(listDataKeluar[i][5] || 0);
-        const jumlah = (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—';
+        const jumlah = (fnb || paket) ? `FnB ${fnb} · Pkt ${paket}` : '—';
         rows.push({ kode, nama, jumlah, waktu: jam || '—', jenis: 'keluar', idx: i, type: 'keluar', timestamp: jam, rowNum: i });
       }
       rows.sort((a, b) => {
@@ -2572,7 +2683,7 @@
         if (!kode && !nama) continue;
         const fnb = Number(listDataKeluar[i][4] || 0);
         const paket = Number(listDataKeluar[i][5] || 0);
-        rows.push({ kode, nama, jumlah: (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—', waktu: listDataKeluar[i][7] || '—', jenis: 'keluar', idx: i, type: 'keluar' });
+        rows.push({ kode, nama, jumlah: (fnb || paket) ? `FnB ${fnb} · Pkt ${paket}` : '—', waktu: listDataKeluar[i][7] || '—', jenis: 'keluar', idx: i, type: 'keluar' });
       }
     }
 
@@ -2650,7 +2761,7 @@
           <button class="tbl-btn edit" onclick="editData('${r.type}',${r.idx})" title="Edit">
             <i class="ti ti-edit"></i>
           </button>
-          <button class="tbl-btn del"  onclick="hapusData('${r.type}',${r.idx+1})" title="Hapus">
+          <button class="tbl-btn del"  onclick="hapusData('${r.type}',${r.idx+1})" title="Hapus data">
             <i class="ti ti-trash"></i>
           </button>
         </td>
