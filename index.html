@@ -1115,13 +1115,16 @@
 
     <div id="login-error"></div>
 
-    <div id="pin-section" style="display:block; border-top:0; padding-top:0; margin-top:0;">
-      <p class="pin-label">Masuk menggunakan akun yang dibuat di Supabase.</p>
-      <div class="form-group" style="margin-bottom:10px;">
-        <input type="email" id="user-email" placeholder="Email" autocomplete="email">
-      </div>
+    <div id="google-section">
+      <p class="pin-label">Masuk menggunakan akun Google/Gmail yang telah terdaftar.</p>
+      <button class="btn btn-primary btn-full" id="btnGoogleLogin" onclick="loginDenganGoogle()">
+        <i class="ti ti-brand-google"></i> Masuk dengan Google
+      </button>
+    </div>
+    <div id="pin-section" style="display:none; border-top:0; padding-top:0; margin-top:0;">
+      <p class="pin-label" id="pin-info">Masukkan PIN akses.</p>
       <div class="form-group">
-        <input type="password" id="user-pin" placeholder="Password"
+        <input type="password" id="user-pin" placeholder="PIN akses"
                autocomplete="current-password"
                onkeydown="if(event.key==='Enter') verifikasiAkses()">
       </div>
@@ -3237,9 +3240,10 @@
 
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: fd });
       const url = await res.text();
+      if (!url || url.startsWith('Error:')) throw new Error(url || 'Dokumen tidak dapat dibuat.');
       const a   = document.createElement('a');
-      a.href = url; a.target = '_blank';
-      a.download = `Laporan_Piket_${memo_no}.docx`;
+      a.href = url;
+      a.download = `Memorandum_Laporan_Piket_${memo_no}.doc`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
       alert('Laporan berhasil dibuat!');
@@ -4813,8 +4817,8 @@
   Gunakan Publishable key, JANGAN gunakan Secret key/service_role key.
 */
 const SUPABASE_CONFIG = {
-  url: 'https://zvrygmcpytpxhqntmnjc.supabase.co',
-  anonKey: 'sb_publishable_x4CmPZHD9ffZXylSdwgJ9A_hmvCv0wh'
+  url: 'ISI_URL_PROYEK_SUPABASE',
+  anonKey: 'ISI_PUBLISHABLE_KEY'
 };
 const LEGACY_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnGLtkXKJvk5OgBlf1jatir_8GGRkbB4jwTM1PgztoGieZekILQG-DaMH3HsIvSy3ArQ/exec';
 let supabaseDb;
@@ -4881,15 +4885,32 @@ async function simpanKontak(nama, no_hp) {
   const {error} = await supabaseDb.from('kontak_pengambil').upsert({nama, no_hp, updated_at:new Date().toISOString()});
   sbError(error);
 }
+function escMemo(x) { return String(x == null ? '' : x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function tanggalIndonesia(d) { return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
+function bulanRomawi(b) { return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][b]; }
 async function buatMemo(form) {
   const s = await ringkasan();
-  const nomor = nilai(form,'no_urut') || '-';
-  const html = '<html><body style="font-family:Arial"><h2>MEMO LAPORAN PIKET</h2>' +
-    '<p>Nomor: '+nomor+'</p><p>Petugas: '+(nilai(form,'petugas_piket')||'-')+'</p>'+
-    '<p>Jumlah surat/dokumen: '+(nilai(form,'jml_surat')||'0')+'</p><hr>'+
-    '<p>Paket masuk: '+s.masuk+' | Paket keluar: '+s.paketKeluar+' | FnB: '+s.fnb+'</p>'+
-    '<p>Dokumen belum diambil: '+s.dokBelum+'</p></body></html>';
-  return URL.createObjectURL(new Blob([html],{type:'application/msword'}));
+  const sekarang = new Date(), besok = new Date(sekarang); besok.setDate(sekarang.getDate()+1);
+  const nomor = escMemo(nilai(form,'no_urut') || '-');
+  const petugas = escMemo(nilai(form,'petugas_piket') || '-');
+  const surat = Number(nilai(form,'jml_surat') || 0);
+  const hariIni = tanggalIndonesia(sekarang), hariBesok = tanggalIndonesia(besok);
+  const img = b64 => b64 ? '<img src="data:image/jpeg;base64,'+b64+'" style="max-width:100%;max-height:390px;display:block;margin:12px auto;">' : '<p style="text-align:center;color:#666;margin:35px 0;">Eviden tidak dilampirkan</p>';
+  const table = (rows) => '<table><tr><th>No.</th><th>Item</th><th>Jumlah</th></tr>'+rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td></tr>').join('')+'</table>';
+  const masukTotal = surat + s.fnb + s.masuk, keluarTotal = s.paketKeluar + s.fnb;
+  const html = '<!doctype html><html><head><meta charset="utf-8"><style>'+ 
+    '@page{size:A4;margin:2.54cm 2.2cm}body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.42;color:#000}p{margin:0 0 10px}.kop{font-size:13pt;line-height:1.25;margin-bottom:42px}.memo{text-align:center;font-size:15pt;text-decoration:underline;margin:0}.nomor{text-align:center;font-size:11pt;margin:3px 0 34px}.meta{margin-left:1.35cm;margin-bottom:12px}.meta td{vertical-align:top;padding:1px 7px 1px 0}.meta td:first-child{width:3cm}.dasar{margin-left:1cm}.isi{margin-left:1cm;text-align:justify}.list{margin-left:1.15cm;padding-left:20px;text-align:justify}.list li{margin-bottom:5px}table{border-collapse:collapse;width:84%;margin:10px auto 18px}th,td{border:1px solid #000;padding:5px 8px}th{text-align:center}td:first-child{text-align:center;width:9%}.right{text-align:center;margin-left:auto;width:40%;margin-top:34px}.lampiran{page-break-before:always}.lampiran h2{text-align:center;font-size:15pt;margin-top:55px}.eviden{margin-top:32px}.eviden p{text-align:center;font-weight:bold}</style></head><body>'+ 
+    '<div class="kop">BADAN INTELIJEN NEGARA<br><u>TIM PIKET ADMINISTRASI</u></div>'+ 
+    '<p class="memo">MEMORANDUM</p><p class="nomor">Nomor: B/M-'+nomor+'/Tim-Piket-Administrasi/'+bulanRomawi(sekarang.getMonth())+'/'+sekarang.getFullYear()+'</p>'+ 
+    '<table class="meta"><tr><td>Kepada</td><td>:</td><td>Yth. Kepala Biro Umum</td></tr><tr><td>Dari</td><td>:</td><td>Petugas Piket Administrasi Biro Umum</td></tr><tr><td>Tembusan</td><td>:</td><td>Yth. Kepala Bagian 05.1</td></tr><tr><td>Hal</td><td>:</td><td>Laporan Kegiatan Piket Administrasi Biro Umum Pada '+hariIni+'</td></tr></table>'+ 
+    '<p><b>1. Dasar:</b></p><div class="dasar"><p>a. Peraturan Badan Intelijen Negara Nomor 01 Tahun 2022 tentang Organisasi dan Tata Kerja Badan Intelijen Negara;</p><p>b. Surat Perintah Kepala Biro Umum tentang Pelaksanaan Tugas Pelayanan Pendistribusian Surat Dinas, Penerimaan Surat serta Penerimaan Paket;</p><p>c. Program Kerja Biro Umum Tahun Anggaran '+sekarang.getFullYear()+'.</p></div>'+ 
+    '<p class="isi"><b>2.</b> Sehubungan dasar di atas, dengan hormat disampaikan laporan pelaksanaan Piket Pelayanan Pendistribusian Surat Dinas, Penerimaan Surat serta Penerimaan Paket tanggal '+hariIni+' pukul 08.00 s.d. '+hariBesok+' pukul 08.00 WIB dengan petugas piket Tim Piket Administrasi Biro Umum dalam kondisi aman, lancar, dan terkendali sebagai berikut:</p>'+ 
+    '<p class="isi"><b>3.</b> Adapun kegiatan petugas piket pada tanggal '+hariIni+' antara lain:</p><ol class="list"><li>Petugas piket lama dan petugas piket baru melaksanakan serah terima dalam keadaan tertib dan aman.</li><li>Petugas piket melaksanakan penerimaan surat dan melakukan pencatatan serta penginputan paket masuk.</li><li>Petugas piket melaksanakan penerimaan paket atau makanan dari X-Ray dan melakukan pencatatan serta penginputan paket masuk.</li><li>Petugas piket melaksanakan pendistribusian surat ke Biro Umum untuk dicatat dalam buku agenda surat masuk.</li><li>Petugas piket melaksanakan penerimaan dan penyortiran paket atau makanan berdasarkan blok rumah dan unit kerja.</li><li>Petugas piket melaksanakan pendistribusian paket atau makanan kepada pihak yang mengambil serta melakukan pencatatan dan penginputan paket keluar.</li><li>Petugas piket lama dan petugas piket baru melaksanakan serah terima dalam keadaan tertib dan aman.</li></ol>'+ 
+    '<p class="isi"><b>4.</b> Rekapitulasi jumlah paket, makanan, dan surat diterima pada '+hariIni+' sebagai berikut:</p>'+table([['1.','Surat',surat+' buah'],['2.','Makanan',s.fnb+' buah'],['3.','Paket',s.masuk+' buah'],['','<b>Total</b>','<b>'+masukTotal+' buah</b>']])+ 
+    '<p class="isi"><b>5.</b> Rekapitulasi jumlah paket dan makanan keluar pada '+hariIni+' sebagai berikut:</p>'+table([['1.','Paket',s.paketKeluar+' buah'],['2.','Makanan',s.fnb+' buah'],['','<b>Total</b>','<b>'+keluarTotal+' buah</b>']])+ 
+    '<p class="isi"><b>6.</b> Adapun eviden kegiatan piket, terlampir.</p><p class="isi">Demikian mohon untuk menjadi periksa dan petunjuk lebih lanjut.</p><div class="right"><p>Jakarta, '+hariBesok+'</p><p>Petugas Piket,</p><br><br><br><p><b>'+petugas+'</b></p></div>'+ 
+    '<div class="lampiran"><p>Lampiran Memorandum Tim Piket Administrasi</p><p>Nomor : B/M-'+nomor+'/Tim-Piket-Administrasi/'+bulanRomawi(sekarang.getMonth())+'/'+sekarang.getFullYear()+'</p><p>Tanggal : '+hariIni+'</p><h2>DOKUMENTASI KEGIATAN<br>PIKET ADMINISTRASI BIRO UMUM</h2><div class="eviden"><p>EVIDEN KEGIATAN</p>'+img(nilai(form,'eviden1'))+'</div><div class="eviden"><p>EVIDEN SERAH TERIMA</p>'+img(nilai(form,'eviden2'))+'</div></div></body></html>';
+  return URL.createObjectURL(new Blob(['\ufeff',html],{type:'application/msword'}));
 }
 async function adapterSupabase(url, options) {
   if (!supabaseSiap()) return tanggapan('Error: Konfigurasi Supabase belum diisi.', 'text');
@@ -4973,29 +4994,41 @@ window.fetch = function(url, options) {
   return fetchAsli(url,options);
 };
 
-/* Login sekarang memakai Supabase Auth, tetapi desain halaman tetap sama. */
+/* Login Google terlebih dahulu, lalu PIN diverifikasi aman oleh fungsi Supabase. */
 window.handleCredentialResponse = function() {};
-window.verifikasiAkses = async function() {
-  const email = (document.getElementById('user-email').value || '').trim();
-  const password = document.getElementById('user-pin').value;
-  const errEl = document.getElementById('login-error'); const btn = document.getElementById('btnVerifikasi');
+window.loginDenganGoogle = async function() {
+  const errEl=document.getElementById('login-error'), btn=document.getElementById('btnGoogleLogin');
   if (!supabaseSiap()) { errEl.innerText='Konfigurasi Supabase belum diisi di file index.html.'; errEl.style.display='block'; return; }
-  if (!email || !password) { errEl.innerText='Email dan password wajib diisi.'; errEl.style.display='block'; return; }
-  supabaseDb = window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Memverifikasi…'; errEl.style.display='none';
-  const {data,error} = await supabaseDb.auth.signInWithPassword({email,password});
-  if (error) { errEl.innerText='Akses ditolak: '+error.message; errEl.style.display='block'; btn.disabled=false; btn.innerHTML='<i class="ti ti-login"></i> Masuk ke Sistem'; return; }
-  userEmailAktif=data.user.email; localStorage.setItem('isLoggedInDev','true'); localStorage.setItem('userEmailDev',userEmailAktif); checkAuth();
+  supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Mengalihkan ke Google…';
+  const {error}=await supabaseDb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+  if(error){errEl.innerText='Login Google gagal: '+error.message;errEl.style.display='block';btn.disabled=false;btn.innerHTML='<i class="ti ti-brand-google"></i> Masuk dengan Google';}
 };
-window.handleLogout = async function() { if (supabaseDb) await supabaseDb.auth.signOut(); localStorage.removeItem('isLoggedInDev'); localStorage.removeItem('userEmailDev'); location.reload(); };
-window.checkAuth = async function() {
-  if (!supabaseSiap()) return;
-  if (!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
-  const {data:{session}}=await supabaseDb.auth.getSession(); if (!session) return;
+window.verifikasiAkses = async function() {
+  const pin=(document.getElementById('user-pin').value||'').trim(), errEl=document.getElementById('login-error'), btn=document.getElementById('btnVerifikasi');
+  if(!pin) return;
+  if(!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Memverifikasi…';errEl.style.display='none';
+  const {data,error}=await supabaseDb.rpc('verify_access_pin',{p_pin:pin});
+  if(error || !data){errEl.innerText='Akses ditolak. Pastikan akun Google terdaftar dan PIN benar.';errEl.style.display='block';btn.disabled=false;btn.innerHTML='<i class="ti ti-login"></i> Masuk ke Sistem';return;}
+  const {data:{session}}=await supabaseDb.auth.getSession();
+  sessionStorage.setItem('pinVerifiedFor',session.user.id); window.bukaAplikasi(session);
+};
+window.handleLogout = async function() { if (supabaseDb) await supabaseDb.auth.signOut(); sessionStorage.removeItem('pinVerifiedFor'); localStorage.removeItem('isLoggedInDev'); localStorage.removeItem('userEmailDev'); location.reload(); };
+window.bukaAplikasi = function(session) {
   userEmailAktif=session.user.email; localStorage.setItem('isLoggedInDev','true'); localStorage.setItem('userEmailDev',userEmailAktif);
   document.getElementById('login-screen').style.display='none'; document.getElementById('main-app').style.display='block';
   document.getElementById('user-display').innerText=userEmailAktif; document.getElementById('greeting-name').innerText=userEmailAktif.split('@')[0]; document.getElementById('sidebarAvatar').innerText=userEmailAktif.charAt(0).toUpperCase();
   updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false);
+};
+window.checkAuth = async function() {
+  if (!supabaseSiap()) return;
+  if (!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  const {data:{session}}=await supabaseDb.auth.getSession(); if (!session) return;
+  userEmailAktif=session.user.email;
+  if(sessionStorage.getItem('pinVerifiedFor')===session.user.id){window.bukaAplikasi(session);return;}
+  document.getElementById('google-section').style.display='none'; document.getElementById('pin-section').style.display='block';
+  document.getElementById('pin-info').innerText='Akun '+userEmailAktif+' berhasil diverifikasi. Masukkan PIN akses.';
 };
 </script>
 
