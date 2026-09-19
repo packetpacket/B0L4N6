@@ -3072,28 +3072,60 @@
     } catch (e) { console.log(e); }
   }
 
-  function cariSaranNama() {
+  // Kontak dapat berjumlah ribuan. Pencarian dilakukan langsung ke database
+  // supaya nama yang tidak termasuk data awal halaman tetap dapat ditemukan.
+  const versiPencarianKontak = {};
+  async function cariKontakDatabase(kolom, kataKunci, idDropdown) {
+    const q = String(kataKunci || '').trim();
+    if (!q || typeof supabaseDb === 'undefined' || !supabaseDb) return [];
+
+    const versi = (versiPencarianKontak[idDropdown] || 0) + 1;
+    versiPencarianKontak[idDropdown] = versi;
+    try {
+      const { data, error } = await supabaseDb
+        .from('kontak_pengambil')
+        .select('nama,no_hp')
+        .ilike(kolom, `%${q}%`)
+        .order('nama')
+        .limit(20);
+      if (error) throw error;
+      if (versiPencarianKontak[idDropdown] !== versi) return null;
+      return (data || []).map(kontak => ({
+        nama: String(kontak.nama || '').trim(),
+        no_hp: String(kontak.no_hp || '').trim()
+      })).filter(kontak => kontak.nama);
+    } catch (e) {
+      console.warn('Pencarian kontak database gagal:', e);
+      return [];
+    }
+  }
+
+  function tampilkanSaranKontak(kontakList, dropdown, saatDipilih) {
+    dropdown.innerHTML = '';
+    (kontakList || []).forEach(kontak => {
+      const el = document.createElement('div');
+      const namaEl = document.createElement('div');
+      const hpEl = document.createElement('div');
+      el.className = 'saran-item';
+      namaEl.className = 'saran-name';
+      hpEl.className = 'saran-sub';
+      namaEl.textContent = formatNamaKontak(kontak.nama);
+      hpEl.textContent = kontak.no_hp || '-';
+      el.append(namaEl, hpEl);
+      el.onclick = () => saatDipilih(kontak);
+      dropdown.appendChild(el);
+    });
+    dropdown.style.display = kontakList && kontakList.length ? 'block' : 'none';
+  }
+
+  async function cariSaranNama() {
     const q        = document.getElementById('pengambil').value.toLowerCase().trim();
     const dropdown = document.getElementById('dropdownSaran');
     dropdown.innerHTML = '';
     if (!q) { dropdown.style.display = 'none'; return; }
-
-    let ada = false;
-    for (const nama in memoriLokal) {
-      if (nama.includes(q)) {
-        ada = true;
-        const el   = document.createElement('div');
-        el.className = 'saran-item';
-        const rapi = formatNamaKontak(nama);
-        el.innerHTML = `<div class="saran-name">${rapi}</div><div class="saran-sub">${memoriLokal[nama]}</div>`;
-        el.onclick = () => {
-          pilihKontakKeluar(nama);
-          dropdown.style.display = 'none';
-        };
-        dropdown.appendChild(el);
-      }
-    }
-    dropdown.style.display = ada ? 'block' : 'none';
+    const kontak = await cariKontakDatabase('nama', q, 'dropdownSaran');
+    if (kontak === null || document.getElementById('pengambil').value.toLowerCase().trim() !== q) return;
+    tampilkanSaranKontak(kontak, dropdown, pilihKontakKeluar);
   }
 
   function angkaSaja(value) {
@@ -3104,34 +3136,26 @@
     return nama.replace(/\b\w/g, l => l.toUpperCase());
   }
 
-  function pilihKontakKeluar(nama) {
-    document.getElementById('pengambil').value = formatNamaKontak(nama);
-    document.getElementById('notlp').value     = memoriLokal[nama];
+  function pilihKontakKeluar(kontak) {
+    const data = typeof kontak === 'string'
+      ? { nama: kontak, no_hp: memoriLokal[kontak] || '' }
+      : kontak;
+    document.getElementById('pengambil').value = formatNamaKontak(data.nama);
+    document.getElementById('notlp').value     = data.no_hp || '';
     const dropdownNama = document.getElementById('dropdownSaran');
     const dropdownHp   = document.getElementById('dropdownSaranHp');
     if (dropdownNama) dropdownNama.style.display = 'none';
     if (dropdownHp) dropdownHp.style.display = 'none';
   }
 
-  function cariSaranNoHp() {
+  async function cariSaranNoHp() {
     const q        = angkaSaja(document.getElementById('notlp').value);
     const dropdown = document.getElementById('dropdownSaranHp');
     dropdown.innerHTML = '';
     if (!q) { dropdown.style.display = 'none'; return; }
-
-    let ada = false;
-    for (const nama in memoriLokal) {
-      const noHp = angkaSaja(memoriLokal[nama]);
-      if (noHp.includes(q)) {
-        ada = true;
-        const el   = document.createElement('div');
-        el.className = 'saran-item';
-        el.innerHTML = `<div class="saran-name">${formatNamaKontak(nama)}</div><div class="saran-sub">${memoriLokal[nama]}</div>`;
-        el.onclick = () => pilihKontakKeluar(nama);
-        dropdown.appendChild(el);
-      }
-    }
-    dropdown.style.display = ada ? 'block' : 'none';
+    const kontak = await cariKontakDatabase('no_hp', q, 'dropdownSaranHp');
+    if (kontak === null || angkaSaja(document.getElementById('notlp').value) !== q) return;
+    tampilkanSaranKontak(kontak, dropdown, pilihKontakKeluar);
   }
 
   // tutup dropdown saat klik di luar
@@ -4018,58 +4042,36 @@
   }
 
   /* ── AUTOCOMPLETE PENGAMBIL (pakai daftar kontak yang sama dengan Paket Keluar) ── */
-  function cariSaranPengambilDokumen() {
+  async function cariSaranPengambilDokumen() {
     const q        = document.getElementById('inputNamaPengambil').value.toLowerCase().trim();
     const dropdown = document.getElementById('dropdownSaranPengambil');
     dropdown.innerHTML = '';
     if (!q) { dropdown.style.display = 'none'; return; }
-
-    let ada = false;
-    for (const nama in memoriLokal) {
-      if (nama.includes(q)) {
-        ada = true;
-        const el     = document.createElement('div');
-        el.className = 'saran-item';
-        const rapi   = formatNamaKontak(nama);
-        el.innerHTML = `<div class="saran-name">${rapi}</div><div class="saran-sub">${memoriLokal[nama]}</div>`;
-        el.onclick = () => {
-          pilihKontakPengambilDokumen(nama);
-          dropdown.style.display = 'none';
-        };
-        dropdown.appendChild(el);
-      }
-    }
-    dropdown.style.display = ada ? 'block' : 'none';
+    const kontak = await cariKontakDatabase('nama', q, 'dropdownSaranPengambil');
+    if (kontak === null || document.getElementById('inputNamaPengambil').value.toLowerCase().trim() !== q) return;
+    tampilkanSaranKontak(kontak, dropdown, pilihKontakPengambilDokumen);
   }
 
-  function pilihKontakPengambilDokumen(nama) {
-    document.getElementById('inputNamaPengambil').value = formatNamaKontak(nama);
-    document.getElementById('inputNoHpPengambil').value = memoriLokal[nama];
+  function pilihKontakPengambilDokumen(kontak) {
+    const data = typeof kontak === 'string'
+      ? { nama: kontak, no_hp: memoriLokal[kontak] || '' }
+      : kontak;
+    document.getElementById('inputNamaPengambil').value = formatNamaKontak(data.nama);
+    document.getElementById('inputNoHpPengambil').value = data.no_hp || '';
     const dropdownNama = document.getElementById('dropdownSaranPengambil');
     const dropdownHp   = document.getElementById('dropdownSaranHpPengambil');
     if (dropdownNama) dropdownNama.style.display = 'none';
     if (dropdownHp) dropdownHp.style.display = 'none';
   }
 
-  function cariSaranNoHpPengambilDokumen() {
+  async function cariSaranNoHpPengambilDokumen() {
     const q        = angkaSaja(document.getElementById('inputNoHpPengambil').value);
     const dropdown = document.getElementById('dropdownSaranHpPengambil');
     dropdown.innerHTML = '';
     if (!q) { dropdown.style.display = 'none'; return; }
-
-    let ada = false;
-    for (const nama in memoriLokal) {
-      const noHp = angkaSaja(memoriLokal[nama]);
-      if (noHp.includes(q)) {
-        ada = true;
-        const el   = document.createElement('div');
-        el.className = 'saran-item';
-        el.innerHTML = `<div class="saran-name">${formatNamaKontak(nama)}</div><div class="saran-sub">${memoriLokal[nama]}</div>`;
-        el.onclick = () => pilihKontakPengambilDokumen(nama);
-        dropdown.appendChild(el);
-      }
-    }
-    dropdown.style.display = ada ? 'block' : 'none';
+    const kontak = await cariKontakDatabase('no_hp', q, 'dropdownSaranHpPengambil');
+    if (kontak === null || angkaSaja(document.getElementById('inputNoHpPengambil').value) !== q) return;
+    tampilkanSaranKontak(kontak, dropdown, pilihKontakPengambilDokumen);
   }
 
   /* ── FAB (tombol + di mobile): kontekstual sesuai halaman aktif ──
