@@ -2966,14 +2966,22 @@
   }
 
   async function handleDeleteAll() {
-    const f = filterMode === 'semua' ? 'masuk' : filterMode; // default masuk jika semua
-    const pin = prompt(`⚠️ Untuk menghapus SEMUA data ${f.toUpperCase()}, ketik HAPUS:`);
-    if (pin !== 'HAPUS') return alert('Penghapusan dibatalkan.');
+    const f = filterMode;
+    const namaTarget = f === 'semua' ? 'PAKET MASUK DAN PAKET KELUAR' : (f === 'masuk' ? 'PAKET MASUK' : 'PAKET KELUAR');
+    const pin = prompt(`⚠️ Hapus SEMUA ${namaTarget}?\nMasukkan PIN penghapusan:`);
+    if (pin === null) return alert('Penghapusan dibatalkan.');
+    if (!pin.trim()) return alert('PIN penghapusan wajib diisi.');
+    if (!confirm(`Konfirmasi terakhir: semua ${namaTarget.toLowerCase()} akan dihapus permanen.`)) return;
     const btn = document.getElementById('btnHapusMassal');
     btn.disabled = true;
     document.getElementById('hapusLabel').innerText = 'Menghapus…';
     try {
-      const res    = await fetch(`${SCRIPT_URL}?action=deleteAll&targetType=${f}&pin=${pin}&email=${encodeURIComponent(userEmailAktif)}`, { method: 'POST' });
+      const fd = new FormData();
+      fd.append('action','deleteAll');
+      fd.append('targetType',f);
+      fd.append('pin',pin.trim());
+      fd.append('email',userEmailAktif);
+      const res    = await fetch(SCRIPT_URL, { method: 'POST', body:fd });
       const result = await res.text();
       alert(result);
       muatSemuaData();
@@ -2981,7 +2989,7 @@
       alert('Terjadi kesalahan: ' + e.toString());
     } finally {
       btn.disabled = false;
-      document.getElementById('hapusLabel').innerText = 'Hapus semua';
+      document.getElementById('hapusLabel').innerText = f === 'semua' ? 'Hapus semua' : (f === 'masuk' ? 'Hapus semua masuk' : 'Hapus semua keluar');
     }
   }
 
@@ -4857,8 +4865,16 @@ async function idPadaBaris(table, rowNumber) {
   return rows[Number(rowNumber) - 2] || null; // baris 1 adalah header, sama seperti Spreadsheet
 }
 async function simpanKontak(nama, no_hp) {
-  if (!nama || !no_hp) return;
-  const {error} = await supabaseDb.from('kontak_pengambil').upsert({nama, no_hp, updated_at:new Date().toISOString()});
+  nama = String(nama || '').trim(); no_hp = String(no_hp || '').trim();
+  if (!nama) return;
+  const {data:lama,error:cariError} = await supabaseDb.from('kontak_pengambil').select('nama,no_hp').ilike('nama',nama).limit(1);
+  sbError(cariError);
+  const kontak = lama && lama[0];
+  const {error} = await supabaseDb.from('kontak_pengambil').upsert({
+    nama:kontak ? kontak.nama : nama,
+    no_hp:no_hp || (kontak ? kontak.no_hp : ''),
+    updated_at:new Date().toISOString()
+  });
   sbError(error);
 }
 function escMemo(x) { return String(x == null ? '' : x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -4984,7 +5000,7 @@ async function adapterSupabase(url, options) {
   try {
     if (action === 'ping') return tanggapan('pong','text');
     if (action === 'getKontak') {
-      const {data,error} = await supabaseDb.from('kontak_pengambil').select('nama,no_hp').order('nama'); sbError(error);
+      const {data,error} = await supabaseDb.from('kontak_pengambil').select('nama,no_hp').order('nama').limit(10000); sbError(error);
       const out = {}; (data||[]).forEach(x=>out[String(x.nama).toLowerCase().trim()] = x.no_hp); return tanggapan(out);
     }
     if (action === 'getSummary') return tanggapan(await ringkasan());
@@ -5005,10 +5021,17 @@ async function adapterSupabase(url, options) {
     }
     if (action === 'deleteAll') {
       const targetType = nilai(form,'targetType') || get('targetType');
-      const map = {masuk:'paket_masuk',keluar:'paket_keluar',dokumen:'dokumen'}; const table = map[targetType];
-      if (!table) throw new Error('Jenis data tidak dikenali.');
-      const {error} = await supabaseDb.from(table).delete().not('id','is',null); sbError(error);
-      await catatAktivitas('Hapus Massal',targetType,'Seluruh data dihapus'); return tanggapan('Sukses: Semua data berhasil dihapus.','text');
+      const pin = nilai(form,'pin') || get('pin');
+      const {data:pinBenar,error:pinError} = await supabaseDb.rpc('verify_access_pin',{p_pin:pin});
+      if (pinError || !pinBenar) throw new Error('PIN penghapusan salah. Data tidak dihapus.');
+      const map = {masuk:'paket_masuk',keluar:'paket_keluar'};
+      const target = targetType === 'semua' ? ['masuk','keluar'] : [targetType];
+      if (!target.every(x=>map[x])) throw new Error('Jenis data tidak dikenali.');
+      for (const jenis of target) {
+        const {error} = await supabaseDb.from(map[jenis]).delete().not('id','is',null); sbError(error);
+        await catatAktivitas('Hapus Massal',jenis === 'masuk' ? 'Paket Masuk' : 'Paket Keluar','Seluruh data dihapus');
+      }
+      return tanggapan('Sukses: Data '+(targetType === 'semua' ? 'paket masuk dan paket keluar' : (targetType === 'masuk' ? 'paket masuk' : 'paket keluar'))+' berhasil dihapus.','text');
     }
     if (action === 'generateReport') return tanggapan(await buatMemoGoogle(form),'text');
     if (action === 'updateStatusDokumen') {
