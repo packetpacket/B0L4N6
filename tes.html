@@ -1168,7 +1168,50 @@
     .badge { border: 1px solid rgba(36,36,36,.16); font-weight: 700; }
     .user-avatar { background: var(--amber); color: #252525; border: 2px solid var(--border-strong); }
     .trakteer-sidebar { background: linear-gradient(135deg, #ffb42c, #ff8f5c); color: #262626; border: 2px solid var(--border-strong); box-shadow: 3px 3px 0 rgba(36,36,36,.7); }
-    html.dark { --bg:#1f2026; --surface:#292a32; --surface-2:#353640; --border:#4a4b58; --border-strong:#f4ead5; --text-primary:#fff8e9; --text-secondary:#d4d0c7; --text-muted:#aaa59e; }
+    .tbl-btn.del {
+      width: 34px; height: 34px; margin-left: 4px;
+      background: #fff0ef; color: #c83e36;
+      border: 1.5px solid #c83e36; border-radius: 9px;
+    }
+    .tbl-btn.del:hover { background: #d94d43; color: #fff; }
+    .tbl-btn.del i { font-size: 18px; }
+
+    /* Dark mode dibuat lembut dan kontras, bukan sekadar versi hitam. */
+    html.dark {
+      --bg:#1f212a; --surface:#2a2d37; --surface-2:#363944;
+      --border:#525563; --border-strong:#eee3ce;
+      --text-primary:#fff8ed; --text-secondary:#e2dbcf; --text-muted:#bdb6ab;
+      --accent:#7fd3df; --accent-dark:#4baab9; --accent-bg:#253f47; --accent-text:#b8f0f6;
+      --green:#75d994; --green-bg:#183928; --green-border:#4b9b64; --green-text:#a4f2bb;
+      --amber:#ffc34f; --amber-bg:#49391a; --amber-border:#b99038; --amber-text:#ffe2a4;
+      --red:#ff8c85; --red-bg:#4c2428; --red-border:#a95258; --red-text:#ffc4bf;
+      --shadow-sm:3px 3px 0 rgba(0,0,0,.38); --shadow:5px 5px 0 rgba(0,0,0,.42);
+    }
+    html.dark body { background-color:#1f212a; background-image:radial-gradient(#f4d27d 1px, transparent 1px); }
+    html.dark .sidebar, html.dark .topbar { background:#2a2d37; border-color:#eee3ce; }
+    html.dark .login-card, html.dark .stat-card, html.dark .table-card, html.dark .riwayat-top, html.dark .modal-content { background:var(--surface); }
+    html.dark .data-table thead th { background:#f2c765; color:#302915; }
+    html.dark .btn-ghost { background:#363944; color:var(--text-primary); }
+    html.dark .btn-primary { color:#242424; }
+    html.dark .action-big.blue { color:#202020; }
+    html.dark .action-big.green { background:#49391a; color:#ffe2a4; }
+    html.dark .tbl-btn.del { background:#4c2428; border-color:#ff8c85; color:#ffc4bf; }
+    html.dark .tbl-btn.del:hover { background:#d94d43; color:#fff; }
+
+    /* Ponsel: kolom jumlah dibuat lebih ringkas agar angka paket tidak terpotong. */
+    @media (max-width: 768px) {
+      #tabelData { min-width: 610px; }
+      #tabelData th:nth-child(1) { width: 21% !important; }
+      #tabelData th:nth-child(2) { width: 19% !important; }
+      #tabelData th:nth-child(3) { width: 19% !important; }
+      #tabelData th:nth-child(4) { width: 18% !important; }
+      #tabelData th:nth-child(5) { width: 13% !important; }
+      #tabelData th:nth-child(6) { width: 10% !important; }
+      #tabelData tbody td { padding: 10px 8px; font-size: 11.5px; }
+      #tabelData tbody td:nth-child(3) { font-size: 10.5px; letter-spacing:-.04em; }
+      .tbl-btn.edit { display: none; }
+      .tbl-btn.del { margin:0; }
+    }
   </style>
 </head>
 <body>
@@ -2620,7 +2663,7 @@
         const jam = listDataKeluar[i][7] || '';
         const fnb = Number(listDataKeluar[i][4] || 0);
         const paket = Number(listDataKeluar[i][5] || 0);
-        const jumlah = (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—';
+        const jumlah = (fnb || paket) ? `FnB ${fnb} · Pkt ${paket}` : '—';
         rows.push({ kode, nama, jumlah, waktu: jam || '—', jenis: 'keluar', idx: i, type: 'keluar', timestamp: jam, rowNum: i });
       }
       rows.sort((a, b) => {
@@ -2641,7 +2684,7 @@
         if (!kode && !nama) continue;
         const fnb = Number(listDataKeluar[i][4] || 0);
         const paket = Number(listDataKeluar[i][5] || 0);
-        rows.push({ kode, nama, jumlah: (fnb || paket) ? `FnB: ${fnb} · Paket: ${paket}` : '—', waktu: listDataKeluar[i][7] || '—', jenis: 'keluar', idx: i, type: 'keluar' });
+        rows.push({ kode, nama, jumlah: (fnb || paket) ? `FnB ${fnb} · Pkt ${paket}` : '—', waktu: listDataKeluar[i][7] || '—', jenis: 'keluar', idx: i, type: 'keluar' });
       }
     }
 
@@ -2719,7 +2762,7 @@
           <button class="tbl-btn edit" onclick="editData('${r.type}',${r.idx})" title="Edit">
             <i class="ti ti-edit"></i>
           </button>
-          <button class="tbl-btn del"  onclick="hapusData('${r.type}',${r.idx+1})" title="Hapus">
+          <button class="tbl-btn del"  onclick="hapusData('${r.type}',${r.idx+1})" title="Hapus data">
             <i class="ti ti-trash"></i>
           </button>
         </td>
