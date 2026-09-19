@@ -3241,6 +3241,12 @@
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: fd });
       const url = await res.text();
       if (!url || url.startsWith('Error:')) throw new Error(url || 'Dokumen tidak dapat dibuat.');
+      if (url.indexOf('docs.google.com/document/') !== -1) {
+        window.open(url, '_blank', 'noopener');
+        alert('Memorandum berhasil dibuat di Google Drive.');
+        tutupModalLaporan();
+        return;
+      }
       const a   = document.createElement('a');
       a.href = url;
       a.download = `Memorandum_Laporan_Piket_${memo_no}.doc`;
@@ -4817,8 +4823,14 @@
   Gunakan Publishable key, JANGAN gunakan Secret key/service_role key.
 */
 const SUPABASE_CONFIG = {
-  url: 'https://zvrygmcpytpxhqntmnjc.supabase.co',
-  anonKey: 'sb_publishable_x4CmPZHD9ffZXylSdwgJ9A_hmvCv0wh'
+  url: 'ISI_URL_PROYEK_SUPABASE',
+  anonKey: 'ISI_PUBLISHABLE_KEY'
+};
+/* Memo dibuat sebagai salinan Google Docs dari template ini.
+   Jangan hapus placeholder {{...}} pada file template. */
+const GOOGLE_MEMO_CONFIG = {
+  templateId: '1QjpEucPXLxyinDsSkmht4gn7EbjaGDQHQFbY5LCRQ4s',
+  folderId: '10Yei6NkIKy4gL7CDWm7xI70MnR_61RV-'
 };
 const LEGACY_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnGLtkXKJvk5OgBlf1jatir_8GGRkbB4jwTM1PgztoGieZekILQG-DaMH3HsIvSy3ArQ/exec';
 let supabaseDb;
@@ -4888,6 +4900,46 @@ async function simpanKontak(nama, no_hp) {
 function escMemo(x) { return String(x == null ? '' : x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function tanggalIndonesia(d) { return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
 function bulanRomawi(b) { return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][b]; }
+function apiGoogleError(res, label) {
+  if (res.ok) return res.json();
+  return res.json().catch(()=>({})).then(x=>{ throw new Error(label+': '+(x?.error?.message || res.statusText)); });
+}
+async function buatMemoGoogle(form) {
+  const {data:{session}} = await supabaseDb.auth.getSession();
+  const token = session?.provider_token || sessionStorage.getItem('googleDriveProviderToken');
+  if (!token) throw new Error('Izin Google Drive belum tersedia. Keluar dari aplikasi, lalu masuk lagi dengan Google.');
+  const s = await ringkasan(), sekarang = new Date(), besok = new Date(sekarang);
+  besok.setDate(sekarang.getDate()+1);
+  const nomor = nilai(form,'no_urut') || '-';
+  const tanggal = tanggalIndonesia(sekarang), tanggalBesok = tanggalIndonesia(besok);
+  const surat = Number(nilai(form,'jml_surat') || 0);
+  const nilaiTemplate = {
+    '{{no_urut}}': nomor,
+    '{{bulan_romawi}}': bulanRomawi(sekarang.getMonth()),
+    '{{tahun}}': String(sekarang.getFullYear()),
+    '{{tgl_laporan}}': tanggal,
+    '{{tgl_setelah_laporan}}': tanggalBesok,
+    '{{surat}}': String(surat),
+    '{{fnb}}': String(s.fnb),
+    '{{paket_masuk}}': String(s.masuk),
+    '{{ttl_paket_masuk}}': String(surat + s.fnb + s.masuk),
+    '{{paket_keluar}}': String(s.paketKeluar),
+    '{{ttl_paket_keluar}}': String(s.paketKeluar + s.fnb),
+    '{{petugas_piket}}': nilai(form,'petugas_piket') || '-',
+    '{{EVIDEN_GAMBAR_1}}': 'Eviden kegiatan terlampir pada aplikasi.',
+    '{{EVIDEN_GAMBAR_2}}': 'Eviden serah terima terlampir pada aplikasi.'
+  };
+  const judul = 'Memorandum Laporan Piket '+tanggal+' Nomor '+nomor;
+  const copy = await fetch('https://www.googleapis.com/drive/v3/files/'+GOOGLE_MEMO_CONFIG.templateId+'/copy', {
+    method:'POST', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({name:judul,parents:[GOOGLE_MEMO_CONFIG.folderId]})
+  }).then(r=>apiGoogleError(r,'Gagal membuat salinan template'));
+  const requests = Object.entries(nilaiTemplate).map(([text,replaceText])=>({replaceAllText:{containsText:{text,matchCase:true},replaceText}}));
+  await fetch('https://docs.googleapis.com/v1/documents/'+copy.id+':batchUpdate', {
+    method:'POST', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify({requests})
+  }).then(r=>apiGoogleError(r,'Gagal mengisi memorandum'));
+  return 'https://docs.google.com/document/d/'+copy.id+'/edit';
+}
 async function buatMemo(form) {
   const s = await ringkasan();
   const sekarang = new Date(), besok = new Date(sekarang); besok.setDate(sekarang.getDate()+1);
@@ -4954,7 +5006,7 @@ async function adapterSupabase(url, options) {
       const {error} = await supabaseDb.from(table).delete().not('id','is',null); sbError(error);
       await catatAktivitas('Hapus Massal',targetType,'Seluruh data dihapus'); return tanggapan('Sukses: Semua data berhasil dihapus.','text');
     }
-    if (action === 'generateReport') return tanggapan(await buatMemo(form),'text');
+    if (action === 'generateReport') return tanggapan(await buatMemoGoogle(form),'text');
     if (action === 'updateStatusDokumen') {
       const record = await idPadaBaris('dokumen',nilai(form,'row')); if (!record) throw new Error('Dokumen tidak ditemukan.');
       const status = nilai(form,'status'); const pengambil = status === 'Diambil' ? nilai(form,'pengambil') : ''; const no_hp = status === 'Diambil' ? nilai(form,'noHp') : '';
@@ -5001,7 +5053,11 @@ window.loginDenganGoogle = async function() {
   if (!supabaseSiap()) { errEl.innerText='Konfigurasi Supabase belum diisi di file index.html.'; errEl.style.display='block'; return; }
   supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Mengalihkan ke Google…';
-  const {error}=await supabaseDb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+  const {error}=await supabaseDb.auth.signInWithOAuth({provider:'google',options:{
+    redirectTo:location.origin+location.pathname,
+    scopes:'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents',
+    queryParams:{access_type:'offline',prompt:'consent'}
+  }});
   if(error){errEl.innerText='Login Google gagal: '+error.message;errEl.style.display='block';btn.disabled=false;btn.innerHTML='<i class="ti ti-brand-google"></i> Masuk dengan Google';}
 };
 window.verifikasiAkses = async function() {
@@ -5026,6 +5082,7 @@ window.checkAuth = async function() {
   if (!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
   const {data:{session}}=await supabaseDb.auth.getSession(); if (!session) return;
   userEmailAktif=session.user.email;
+  if (session.provider_token) sessionStorage.setItem('googleDriveProviderToken',session.provider_token);
   if(sessionStorage.getItem('pinVerifiedFor')===session.user.id){window.bukaAplikasi(session);return;}
   document.getElementById('google-section').style.display='none'; document.getElementById('pin-section').style.display='block';
   document.getElementById('pin-info').innerText='Akun '+userEmailAktif+' berhasil diverifikasi. Masukkan PIN akses.';
