@@ -793,6 +793,17 @@
     .offline-banner i { font-size: 17px; color: var(--amber); flex-shrink: 0; }
     .offline-banner strong { font-weight: 700; }
 
+    .offline-queue-banner {
+      display: none; align-items: center; gap: 9px;
+      background: var(--amber-bg); color: var(--amber-text);
+      border: 1px solid var(--amber-border);
+      border-radius: var(--radius); padding: 10px 14px;
+      font-size: 12.5px; font-weight: 500; margin-bottom: 16px;
+    }
+    .offline-queue-banner.show { display: flex; }
+    .offline-queue-banner i { font-size: 17px; flex-shrink: 0; }
+    .offline-queue-banner strong { font-weight: 800; }
+
     /* ========== MODAL OVERLAY ========== */
     .overlay {
       position: fixed; inset: 0;
@@ -1347,9 +1358,9 @@
       </div>
       <div class="topbar-right">
         <button class="sync-pending-btn" id="syncPendingBtn" onclick="syncPendingData(true)" title="Sinkronkan data tertunda">
-          <i class="ti ti-cloud-upload"></i>
+          <i class="ti ti-device-floppy"></i>
           <span id="syncPendingCount">0</span>
-          <span class="sync-pending-label">pending</span>
+          <span class="sync-pending-label">data offline</span>
         </button>
         <button class="icon-btn" onclick="refresh()" title="Refresh"><i class="ti ti-refresh"></i></button>
         <!-- TRAKTEER (hanya muncul di mobile) -->
@@ -1375,6 +1386,10 @@
       <div class="offline-banner" id="offlineBanner">
         <i class="ti ti-cloud-off"></i>
         <span>Data terakhir diperbarui pukul <strong id="offlineTime">--.--</strong> (mode offline)</span>
+      </div>
+      <div class="offline-queue-banner" id="offlineQueueBanner" role="status" aria-live="polite">
+        <i class="ti ti-device-floppy"></i>
+        <span><strong id="offlineQueueCount">0 data</strong> tersimpan offline di perangkat ini. Akan disinkronkan otomatis saat koneksi stabil.</span>
       </div>
 
       <!-- ========== HALAMAN DASHBOARD ========== -->
@@ -2049,7 +2064,11 @@
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwnGLtkXKJvk5OgBlf1jatir_8GGRkbB4jwTM1PgztoGieZekILQG-DaMH3HsIvSy3ArQ/exec";
   const TIMEOUT_MS = 20000; // 20 detik — dinaikkan dari 12 detik karena Apps Script/Sheets kadang lelet, bukan cuma soal koneksi 4G
   const CACHE_KEY  = 'bolangPaketCache';
-  const PENDING_SYNC_KEY = 'bolangPaketPendingSync';
+  const PENDING_SYNC_KEY = 'bolangPaketPendingSyncV2';
+  const PENDING_SYNC_LEGACY_KEY = 'bolangPaketPendingSync';
+  // Bila simpanan baru menggantung terlalu lama, data tetap aman dimasukkan
+  // ke antrean browser lalu disinkronkan dengan ID yang sama.
+  const SAVE_TIMEOUT_MS = 10000;
 
   /* ── STATE ──────────────────────────────────────────────────── */
   let userEmailAktif = "";
@@ -2353,13 +2372,16 @@
   function ambilPendingSync() {
     try {
       const raw = localStorage.getItem(PENDING_SYNC_KEY);
-      return raw ? JSON.parse(raw) : [];
+      if (raw) return JSON.parse(raw);
+      const legacy = localStorage.getItem(PENDING_SYNC_LEGACY_KEY);
+      return legacy ? JSON.parse(legacy) : [];
     } catch (e) { return []; }
   }
 
   function simpanPendingSync(items) {
     try {
       localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(items || []));
+      localStorage.removeItem(PENDING_SYNC_LEGACY_KEY);
     } catch (e) {
       alert('Data gagal disimpan offline. Storage browser mungkin penuh.');
     }
@@ -2370,18 +2392,23 @@
     const items = ambilPendingSync();
     const btn = document.getElementById('syncPendingBtn');
     const count = document.getElementById('syncPendingCount');
+    const banner = document.getElementById('offlineQueueBanner');
+    const bannerCount = document.getElementById('offlineQueueCount');
     if (count) count.innerText = items.length;
+    if (bannerCount) bannerCount.innerText = `${items.length} data`;
+    if (banner) banner.classList.toggle('show', items.length > 0);
     if (btn) {
       btn.classList.toggle('show', items.length > 0);
       btn.classList.toggle('syncing', sedangSinkronPending);
-      btn.title = items.length ? `${items.length} data belum tersinkron ke Spreadsheet` : 'Tidak ada data tertunda';
+      btn.title = items.length ? `${items.length} data tersimpan offline dan menunggu sinkronisasi` : 'Tidak ada data tertunda';
     }
   }
 
   function tambahPendingSync(label, fd) {
     const items = ambilPendingSync();
+    siapkanDataTahanDuplikat(fd);
     items.push({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: idSinkronisasiBaru(),
       label,
       data: formDataKeObject(fd),
       waktu: Date.now()
@@ -2390,18 +2417,53 @@
   }
 
   function isNetworkSaveError(err) {
-    return err && (err.name === 'AbortError' || err instanceof TypeError || !navigator.onLine);
+    return err && (err.isOfflineSaveError || err.name === 'AbortError' || err.name === 'TimeoutError' || err instanceof TypeError || !navigator.onLine);
   }
 
   async function kirimFormDataKeServer(fd) {
-    const res = await fetchWithTimeout(SCRIPT_URL, { method: 'POST', body: fd }, TIMEOUT_MS);
+    siapkanDataTahanDuplikat(fd);
+    const res = await denganBatasSimpan(fetch(SCRIPT_URL, { method: 'POST', body: fd }), SAVE_TIMEOUT_MS);
     const result = await res.text();
+    if (result && result.toString().trim().indexOf('Offline:') === 0) {
+      const err = new Error(result);
+      err.isOfflineSaveError = true;
+      throw err;
+    }
     if (result && result.toString().trim().indexOf('Error') === 0) {
       const err = new Error(result);
       err.isServerError = true;
       throw err;
     }
     return result;
+  }
+
+  function idSinkronisasiBaru() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  function siapkanDataTahanDuplikat(fd) {
+    if (!(fd instanceof FormData)) return fd;
+    const type = String(fd.get('formType') || '');
+    const edit = String(fd.get('action') || '') === 'edit';
+    if ((type === 'masuk' || type === 'keluar' || type === 'dokumen') && !edit && !fd.get('__sync_id')) fd.append('__sync_id', idSinkronisasiBaru());
+    return fd;
+  }
+
+  function denganBatasSimpan(promise, timeoutMs) {
+    let timer;
+    const lambat = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error('Koneksi terlalu lambat. Data dimasukkan ke antrean offline.');
+        err.name = 'TimeoutError';
+        err.isOfflineSaveError = true;
+        reject(err);
+      }, timeoutMs);
+    });
+    return Promise.race([promise, lambat]).finally(() => clearTimeout(timer));
   }
 
   async function syncPendingData(manual = false) {
@@ -4918,8 +4980,8 @@
   Gunakan Publishable key, JANGAN gunakan Secret key/service_role key.
 */
 const SUPABASE_CONFIG = {
-  url: 'https://zvrygmcpytpxhqntmnjc.supabase.co',
-  anonKey: 'sb_publishable_x4CmPZHD9ffZXylSdwgJ9A_hmvCv0wh'
+  url: 'ISI_URL_PROYEK_SUPABASE',
+  anonKey: 'ISI_PUBLISHABLE_KEY'
 };
 /* Memo dibuat sebagai salinan Google Docs dari template ini.
    Jangan hapus placeholder {{...}} pada file template. */
@@ -4934,6 +4996,29 @@ function supabaseSiap() {
   return SUPABASE_CONFIG.url.indexOf('ISI_') !== 0 && SUPABASE_CONFIG.anonKey.indexOf('ISI_') !== 0;
 }
 function sbError(error) { if (error) throw new Error(error.message || String(error)); }
+function adalahKesalahanKoneksi(error) {
+  const pesan = String(error?.message || error || '').toLowerCase();
+  return !navigator.onLine || error?.name === 'AbortError' || error?.name === 'TimeoutError' ||
+    /failed to fetch|fetch failed|networkerror|network request failed|load failed|network is unreachable|connection/.test(pesan);
+}
+function idSinkronisasiDariForm(form) {
+  const id = String(form.get('__sync_id') || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : '';
+}
+async function insertTanpaDuplikasi(table, data) {
+  const {error} = await supabaseDb.from(table).insert(data);
+  if (!error) return {sudahAda:false};
+
+  // Bila respons pertama hilang karena jaringan lambat, percobaan ulang
+  // akan berbenturan dengan primary key yang sama. Verifikasi ID tersebut
+  // lalu anggap sukses, bukan membuat data kedua.
+  if (error.code === '23505' && data.id) {
+    const {data:existing, error:cekError} = await supabaseDb.from(table)
+      .select('id').eq('id', data.id).maybeSingle();
+    if (!cekError && existing) return {sudahAda:true};
+  }
+  throw error;
+}
 function waktuLokal(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -5168,25 +5253,39 @@ async function adapterSupabase(url, options) {
       const data = {resi:nilai(form,'resi'),alamat:nilai(form,'alamatMasuk'),jumlah:Number(nilai(form,'jumlahMasuk')||1)};
       let error;
       if (nilai(form,'action') === 'edit') { const rec=await idPadaBaris('paket_masuk',nilai(form,'row')); if(!rec) throw new Error('Data tidak ditemukan.'); ({error}=await supabaseDb.from('paket_masuk').update(data).eq('id',rec.id)); await catatAktivitas('Edit','Paket Masuk','Resi: '+data.resi); }
-      else { ({error}=await supabaseDb.from('paket_masuk').insert(data)); await catatAktivitas('Tambah','Paket Masuk','Resi: '+data.resi); }
+      else {
+        const syncId = idSinkronisasiDariForm(form); if (syncId) data.id = syncId;
+        try { const hasil = await insertTanpaDuplikasi('paket_masuk',data); if (!hasil.sudahAda) await catatAktivitas('Tambah','Paket Masuk','Resi: '+data.resi); }
+        catch (e) { error = e; }
+      }
       if(error) throw new Error(error.code === '23505' ? 'Nomor resi sudah terdaftar.' : error.message); return tanggapan('Sukses.','text');
     }
     if (formType === 'keluar') {
       const data={pemilik:nilai(form,'pemilik'),alamat:nilai(form,'alamatKeluar'),pengambil:nilai(form,'pengambil'),no_hp:nilai(form,'notlp'),jumlah_fnb:Number(nilai(form,'jumlahFnb')||nilai(form,'fnb')||0),jumlah_paket:Number(nilai(form,'jumlahPaket')||nilai(form,'paket')||0),disposal:nilai(form,'disposal'),daftar_resi:nilai(form,'daftarResi')};
       let error;
       if(nilai(form,'action')==='edit'){const rec=await idPadaBaris('paket_keluar',nilai(form,'row'));if(!rec)throw new Error('Data tidak ditemukan.');({error}=await supabaseDb.from('paket_keluar').update(data).eq('id',rec.id));await catatAktivitas('Edit','Paket Keluar','Pengambil: '+data.pengambil);}
-      else {({error}=await supabaseDb.from('paket_keluar').insert(data));await catatAktivitas('Tambah','Paket Keluar','Pengambil: '+data.pengambil);}
+      else {
+        const syncId = idSinkronisasiDariForm(form); if (syncId) data.id = syncId;
+        try { const hasil = await insertTanpaDuplikasi('paket_keluar',data); if (!hasil.sudahAda) await catatAktivitas('Tambah','Paket Keluar','Pengambil: '+data.pengambil); }
+        catch (e) { error = e; }
+      }
       sbError(error); await simpanKontak(data.pengambil,data.no_hp); return tanggapan('Sukses.','text');
     }
     if (formType === 'dokumen') {
       const data={nomor_resi:nilai(form,'nomorResi')||nilai(form,'dokResi'),pemilik_alamat:nilai(form,'pemilikAlamat')||nilai(form,'dokPemilik'),pengirim:nilai(form,'pengirim')||nilai(form,'dokPengirim'),keterangan:nilai(form,'keterangan')||nilai(form,'dokKeterangan')||'Surat'};
       let error;
       if(nilai(form,'action')==='edit'){const rec=await idPadaBaris('dokumen',nilai(form,'row'));if(!rec)throw new Error('Dokumen tidak ditemukan.');({error}=await supabaseDb.from('dokumen').update(data).eq('id',rec.id));await catatAktivitas('Edit','Dokumen','Resi: '+data.nomor_resi);}
-      else {({error}=await supabaseDb.from('dokumen').insert(data));await catatAktivitas('Tambah','Dokumen','Resi: '+data.nomor_resi);}
+      else {
+        const syncId = idSinkronisasiDariForm(form); if (syncId) data.id = syncId;
+        try { const hasil = await insertTanpaDuplikasi('dokumen',data); if (!hasil.sudahAda) await catatAktivitas('Tambah','Dokumen','Resi: '+data.nomor_resi); }
+        catch (e) { error = e; }
+      }
       if(error) throw new Error(error.code === '23505' ? 'Nomor resi/dokumen sudah terdaftar.' : error.message); return tanggapan('Sukses.','text');
     }
     return tanggapan({error:true,message:'Aksi tidak dikenal.'});
-  } catch (err) { return tanggapan('Error: '+err.message,'text'); }
+  } catch (err) {
+    return tanggapan((adalahKesalahanKoneksi(err) ? 'Offline: ' : 'Error: ') + err.message,'text');
+  }
 }
 
 /* Alihkan seluruh panggilan lama ke PostgreSQL/Supabase. */
@@ -5195,6 +5294,13 @@ window.fetch = function(url, options) {
   if (String(url).indexOf(LEGACY_SCRIPT_URL) === 0) return adapterSupabase(url,options || {});
   return fetchAsli(url,options);
 };
+
+// Cache halaman yang sudah pernah dibuka agar formulir masih dapat digunakan
+// ketika aplikasi dibuka kembali tanpa internet. Gagal mendaftar tidak
+// mengganggu aplikasi pada browser/perangkat yang tidak mendukungnya.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
 
 /* Login Google terlebih dahulu, lalu PIN diverifikasi aman oleh fungsi Supabase. */
 window.handleCredentialResponse = function() {};
