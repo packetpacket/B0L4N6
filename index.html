@@ -1257,6 +1257,10 @@
       <button class="btn btn-primary btn-full" id="btnVerifikasi" onclick="verifikasiAkses()">
         <i class="ti ti-login"></i> Masuk ke Sistem
       </button>
+      <button class="btn btn-full" id="btnBiometrikPin" onclick="masukDenganBiometrikDariPin()" style="display:none;margin-top:10px;">
+        <i class="ti ti-fingerprint"></i> Masuk dengan Sidik Jari / Face ID
+      </button>
+      <p class="pin-label" id="biometrik-pin-note" style="display:none;margin:10px 0 0;font-size:12px;opacity:.75;">Gunakan PIN atau biometrik yang sudah terdaftar di perangkat ini.</p>
     </div>
   </div>
 </div>
@@ -5373,6 +5377,24 @@ window.verifikasiAkses = async function() {
   const {data:{session}}=await supabaseDb.auth.getSession();
   sessionStorage.setItem('pinVerifiedFor',session.user.id); window.bukaAplikasi(session);
 };
+window.masukDenganBiometrikDariPin = async function() {
+  const errEl=document.getElementById('login-error'), btn=document.getElementById('btnBiometrikPin');
+  if(!window.PublicKeyCredential){errEl.innerText='Perangkat/browser ini belum mendukung biometrik.';errEl.style.display='block';return;}
+  if(!supabaseDb) supabaseDb=buatKlienSupabase();
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Menunggu verifikasi perangkat…'; errEl.style.display='none';
+  try {
+    const {data,error}=await supabaseDb.auth.signInWithPasskey();
+    if(error) throw error;
+    if(!data || !data.session) throw new Error('Sesi biometrik tidak terbentuk.');
+    await pastikanAkunTerdaftar();
+    sessionStorage.setItem('pinVerifiedFor',data.session.user.id);
+    window.bukaAplikasi(data.session);
+  } catch(error) {
+    errEl.innerText='Biometrik gagal. Silakan gunakan PIN. '+(error.message||error); errEl.style.display='block';
+  } finally {
+    btn.disabled=false; btn.innerHTML='<i class="ti ti-fingerprint"></i> Masuk dengan Sidik Jari / Face ID';
+  }
+};
 window.handleLogout = async function() { if (supabaseDb) await supabaseDb.auth.signOut(); sessionStorage.removeItem('pinVerifiedFor'); localStorage.removeItem('isLoggedInDev'); localStorage.removeItem('userEmailDev'); location.reload(); };
 window.bukaAplikasi = function(session) {
   userEmailAktif=session.user.email; localStorage.setItem('isLoggedInDev','true'); localStorage.setItem('userEmailDev',userEmailAktif);
@@ -5389,6 +5411,10 @@ window.checkAuth = async function() {
   if(sessionStorage.getItem('pinVerifiedFor')===session.user.id){window.bukaAplikasi(session);return;}
   document.getElementById('google-section').style.display='none'; document.getElementById('pin-section').style.display='block';
   document.getElementById('pin-info').innerText='Akun '+userEmailAktif+' berhasil diverifikasi. Masukkan PIN akses.';
+  if(window.PublicKeyCredential){
+    document.getElementById('btnBiometrikPin').style.display='block';
+    document.getElementById('biometrik-pin-note').style.display='block';
+  }
 };
 </script>
 
