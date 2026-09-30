@@ -21,7 +21,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
   <script>
@@ -1242,6 +1242,10 @@
       <button class="btn btn-primary btn-full" id="btnGoogleLogin" onclick="loginDenganGoogle()">
         <i class="ti ti-brand-google"></i> Masuk dengan Google
       </button>
+      <button class="btn btn-full" id="btnBiometrikLogin" onclick="masukDenganBiometrik()" style="margin-top:10px;">
+        <i class="ti ti-fingerprint"></i> Masuk dengan Sidik Jari / Face ID
+      </button>
+      <p class="pin-label" style="margin:10px 0 0;font-size:12px;opacity:.75;">Tersedia setelah biometrik diaktifkan sekali pada perangkat ini.</p>
     </div>
     <div id="pin-section" style="display:none; border-top:0; padding-top:0; margin-top:0;">
       <p class="pin-label" id="pin-info">Masukkan PIN akses.</p>
@@ -1363,6 +1367,7 @@
           <span class="sync-pending-label">data offline</span>
         </button>
         <button class="icon-btn" onclick="refresh()" title="Refresh"><i class="ti ti-refresh"></i></button>
+        <button class="icon-btn" onclick="daftarkanBiometrik()" title="Aktifkan sidik jari / Face ID di perangkat ini"><i class="ti ti-fingerprint"></i></button>
         <!-- TRAKTEER (hanya muncul di mobile) -->
         <a class="trakteer-icon-btn" href="https://trakteer.id/bolangpacket/tip" target="_blank" rel="noopener" title="Dukung via Trakteer">☕</a>
         <!-- DARK MODE TOGGLE -->
@@ -5194,7 +5199,7 @@ async function buatMemo(form) {
 }
 async function adapterSupabase(url, options) {
   if (!supabaseSiap()) return tanggapan('Error: Konfigurasi Supabase belum diisi.', 'text');
-  if (!supabaseDb) supabaseDb = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+  if (!supabaseDb) supabaseDb = buatKlienSupabase();
   const u = new URL(String(url), location.href);
   const get = key => u.searchParams.get(key) || '';
   let form = new Map();
@@ -5304,10 +5309,52 @@ if ('serviceWorker' in navigator) {
 
 /* Login Google terlebih dahulu, lalu PIN diverifikasi aman oleh fungsi Supabase. */
 window.handleCredentialResponse = function() {};
+function buatKlienSupabase() {
+  return window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+    auth: { experimental: { passkey: true } }
+  });
+}
+async function pastikanAkunTerdaftar() {
+  const { data, error } = await supabaseDb.rpc('is_allowed_user');
+  if (error || !data) {
+    await supabaseDb.auth.signOut();
+    throw new Error('Akun Google ini tidak terdaftar atau sudah dinonaktifkan.');
+  }
+}
+window.daftarkanBiometrik = async function() {
+  const { data:{ session } } = await supabaseDb.auth.getSession();
+  if (!session) return alert('Silakan masuk menggunakan Google dan PIN terlebih dahulu.');
+  try {
+    await pastikanAkunTerdaftar();
+    const { data, error } = await supabaseDb.auth.registerPasskey();
+    if (error) throw error;
+    alert('Sidik jari / Face ID berhasil diaktifkan untuk perangkat ini.' + (data && data.friendly_name ? '\nPerangkat: '+data.friendly_name : ''));
+  } catch (error) {
+    alert('Biometrik belum dapat diaktifkan: '+(error.message || error));
+  }
+};
+window.masukDenganBiometrik = async function() {
+  const errEl=document.getElementById('login-error'), btn=document.getElementById('btnBiometrikLogin');
+  if (!window.PublicKeyCredential) { errEl.innerText='Browser atau perangkat ini belum mendukung sidik jari / Face ID.'; errEl.style.display='block'; return; }
+  if (!supabaseSiap()) { errEl.innerText='Konfigurasi Supabase belum diisi di file index.html.'; errEl.style.display='block'; return; }
+  supabaseDb=buatKlienSupabase(); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Menunggu verifikasi perangkat…'; errEl.style.display='none';
+  try {
+    const { data, error } = await supabaseDb.auth.signInWithPasskey();
+    if (error) throw error;
+    if (!data || !data.session) throw new Error('Sesi biometrik tidak terbentuk.');
+    await pastikanAkunTerdaftar();
+    sessionStorage.setItem('pinVerifiedFor', data.session.user.id);
+    window.bukaAplikasi(data.session);
+  } catch (error) {
+    errEl.innerText='Login biometrik gagal: '+(error.message || error); errEl.style.display='block';
+  } finally {
+    btn.disabled=false; btn.innerHTML='<i class="ti ti-fingerprint"></i> Masuk dengan Sidik Jari / Face ID';
+  }
+};
 window.loginDenganGoogle = async function() {
   const errEl=document.getElementById('login-error'), btn=document.getElementById('btnGoogleLogin');
   if (!supabaseSiap()) { errEl.innerText='Konfigurasi Supabase belum diisi di file index.html.'; errEl.style.display='block'; return; }
-  supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  supabaseDb=buatKlienSupabase();
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Mengalihkan ke Google…';
   const {error}=await supabaseDb.auth.signInWithOAuth({provider:'google',options:{
     redirectTo:location.origin+location.pathname,
@@ -5319,7 +5366,7 @@ window.loginDenganGoogle = async function() {
 window.verifikasiAkses = async function() {
   const pin=(document.getElementById('user-pin').value||'').trim(), errEl=document.getElementById('login-error'), btn=document.getElementById('btnVerifikasi');
   if(!pin) return;
-  if(!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  if(!supabaseDb) supabaseDb=buatKlienSupabase();
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Memverifikasi…';errEl.style.display='none';
   const {data,error}=await supabaseDb.rpc('verify_access_pin',{p_pin:pin});
   if(error || !data){errEl.innerText='Akses ditolak. Pastikan akun Google terdaftar dan PIN benar.';errEl.style.display='block';btn.disabled=false;btn.innerHTML='<i class="ti ti-login"></i> Masuk ke Sistem';return;}
@@ -5335,7 +5382,7 @@ window.bukaAplikasi = function(session) {
 };
 window.checkAuth = async function() {
   if (!supabaseSiap()) return;
-  if (!supabaseDb) supabaseDb=window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey);
+  if (!supabaseDb) supabaseDb=buatKlienSupabase();
   const {data:{session}}=await supabaseDb.auth.getSession(); if (!session) return;
   userEmailAktif=session.user.email;
   if (session.provider_token) sessionStorage.setItem('googleDriveProviderToken',session.provider_token);
