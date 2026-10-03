@@ -5063,7 +5063,7 @@ window.kirimPesanAi = async function(event) {
   try {
     const {data:{session}}=await supabaseDb.auth.getSession();
     if(!session?.access_token) throw new Error('Sesi login tidak ditemukan. Silakan masuk ulang.');
-    const respons=await fetch(SUPABASE_CONFIG.url+'/functions/v1/ai-chat', {
+    const respons=await fetch(SUPABASE_CONFIG.url+'/functions/v1/clever-processor', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_CONFIG.anonKey},
       body:JSON.stringify({question})
     });
