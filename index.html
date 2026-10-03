@@ -1209,6 +1209,28 @@
     html.dark .tbl-btn.del { background:#4c2428; border-color:#ff8c85; color:#ffc4bf; }
     html.dark .tbl-btn.del:hover { background:#d94d43; color:#fff; }
 
+    /* Asisten AI */
+    .ai-fab { position:fixed; right:24px; bottom:24px; z-index:1200; width:58px; height:58px; border:2px solid var(--border-strong); border-radius:50%; background:var(--accent); color:#202020; box-shadow:var(--shadow); font-size:27px; cursor:pointer; }
+    .ai-fab:hover { transform:translateY(-2px); }
+    .ai-panel { position:fixed; right:24px; bottom:94px; z-index:1200; width:min(380px,calc(100vw - 32px)); height:500px; display:none; flex-direction:column; overflow:hidden; background:var(--surface); border:2px solid var(--border-strong); border-radius:18px; box-shadow:var(--shadow); }
+    .ai-panel.open { display:flex; }
+    .ai-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; color:#202020; background:var(--accent); border-bottom:2px solid var(--border-strong); font-weight:800; }
+    .ai-head small { display:block; margin-top:2px; font-size:11px; font-weight:600; opacity:.78; }
+    .ai-close { width:32px; height:32px; border:1.5px solid var(--border-strong); border-radius:9px; color:#202020; background:rgba(255,255,255,.45); cursor:pointer; font-size:19px; }
+    .ai-head-actions { display:flex; align-items:center; gap:7px; }
+    .ai-clear { height:32px; padding:0 9px; border:1.5px solid var(--border-strong); border-radius:9px; color:#202020; background:rgba(255,255,255,.45); cursor:pointer; font:inherit; font-size:11px; font-weight:700; }
+    .ai-clear:hover, .ai-close:hover { background:rgba(255,255,255,.75); }
+    .ai-messages { flex:1; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:10px; background:var(--bg); }
+    .ai-msg { max-width:88%; padding:10px 12px; border:1.5px solid var(--border); border-radius:12px; line-height:1.45; font-size:13px; white-space:pre-wrap; }
+    .ai-msg.bot { align-self:flex-start; background:var(--surface); color:var(--text-primary); }
+    .ai-msg.user { align-self:flex-end; background:var(--accent); color:#202020; border-color:var(--border-strong); }
+    .ai-form { display:flex; gap:8px; padding:12px; border-top:1.5px solid var(--border); background:var(--surface); }
+    .ai-form input { flex:1; min-width:0; padding:11px 12px; border:1.5px solid var(--border-strong); border-radius:10px; color:var(--text-primary); background:var(--bg); font:inherit; }
+    .ai-send { width:44px; border:1.5px solid var(--border-strong); border-radius:10px; background:var(--accent); color:#202020; cursor:pointer; font-size:18px; }
+    .ai-send:disabled { opacity:.6; cursor:not-allowed; }
+    html.dark .ai-panel, html.dark .ai-form { background:var(--surface); }
+    html.dark .ai-messages, html.dark .ai-form input { background:var(--bg); }
+
     /* Ponsel: kolom jumlah dibuat lebih ringkas agar angka paket tidak terpotong. */
     @media (max-width: 768px) {
       #tabelData { min-width: 680px; }
@@ -1221,6 +1243,8 @@
       #tabelData tbody td { padding: 10px 8px; font-size: 11.5px; }
       #tabelData tbody td:nth-child(3) { font-size: 10.5px; letter-spacing:-.04em; }
       .tbl-btn.edit, .tbl-btn.del { margin:0 2px 0 0; }
+      .ai-fab { right:18px; bottom:82px; }
+      .ai-panel { right:16px; bottom:150px; height:min(500px,calc(100vh - 178px)); }
     }
   </style>
 </head>
@@ -1714,6 +1738,25 @@
   </nav>
 
 </div><!-- /#main-app -->
+
+<!-- Asisten AI: hanya tersedia setelah pengguna berhasil masuk -->
+<button class="ai-fab" id="aiFab" type="button" onclick="toggleAiChat()" title="Buka asisten AI" style="display:none"><i class="ti ti-message-chatbot"></i></button>
+<section class="ai-panel" id="aiPanel" aria-label="Asisten AI Bolang Paket">
+  <div class="ai-head">
+    <div><i class="ti ti-sparkles"></i> Asisten Bolang<small>Ringkasan data paket</small></div>
+    <div class="ai-head-actions">
+      <button class="ai-clear" type="button" onclick="clearAiChat()" title="Hapus semua percakapan">Hapus chat</button>
+      <button class="ai-close" type="button" onclick="toggleAiChat()" aria-label="Tutup chat"><i class="ti ti-x"></i></button>
+    </div>
+  </div>
+  <div class="ai-messages" id="aiMessages">
+    <div class="ai-msg bot">Halo! Saya Asisten Bolang. Tanyakan ringkasan paket, misalnya: “Berapa paket masuk saat ini?”</div>
+  </div>
+  <form class="ai-form" onsubmit="kirimPesanAi(event)">
+    <input id="aiInput" maxlength="500" autocomplete="off" placeholder="Tulis pertanyaan…" aria-label="Pesan untuk AI">
+    <button class="ai-send" id="aiSend" type="submit" aria-label="Kirim pesan"><i class="ti ti-send"></i></button>
+  </form>
+</section>
 
 
 <!-- ============================================================
@@ -5004,6 +5047,53 @@ let supabaseDb;
 function supabaseSiap() {
   return SUPABASE_CONFIG.url.indexOf('ISI_') !== 0 && SUPABASE_CONFIG.anonKey.indexOf('ISI_') !== 0;
 }
+const AI_CHAT_IDLE_MS = 10 * 60 * 1000;
+const AI_CHAT_GREETING = 'Halo! Saya Asisten Bolang. Tanyakan ringkasan paket, misalnya: “Berapa paket masuk saat ini?”';
+let aiChatIdleTimer;
+function resetAiChatIdleTimer() {
+  clearTimeout(aiChatIdleTimer);
+  aiChatIdleTimer = setTimeout(() => window.clearAiChat(true), AI_CHAT_IDLE_MS);
+}
+window.clearAiChat = function(silent=false) {
+  const box=document.getElementById('aiMessages'); if (!box) return;
+  clearTimeout(aiChatIdleTimer);
+  box.replaceChildren();
+  tambahPesanAi(AI_CHAT_GREETING,'bot');
+  if (!silent) document.getElementById('aiInput')?.focus();
+};
+function tambahPesanAi(teks, jenis) {
+  const box=document.getElementById('aiMessages'); if (!box) return;
+  const pesan=document.createElement('div'); pesan.className='ai-msg '+jenis; pesan.textContent=teks;
+  box.appendChild(pesan); box.scrollTop=box.scrollHeight;
+  resetAiChatIdleTimer();
+  return pesan;
+}
+window.toggleAiChat = function() {
+  const panel=document.getElementById('aiPanel');
+  if (!panel) return;
+  panel.classList.toggle('open');
+  if(panel.classList.contains('open')) { resetAiChatIdleTimer(); setTimeout(()=>document.getElementById('aiInput')?.focus(),50); }
+};
+window.kirimPesanAi = async function(event) {
+  event.preventDefault();
+  const input=document.getElementById('aiInput'), kirim=document.getElementById('aiSend');
+  const question=(input.value||'').trim(); if(!question) return;
+  if(!supabaseDb) { tambahPesanAi('Silakan masuk ke aplikasi terlebih dahulu.','bot'); return; }
+  input.value=''; tambahPesanAi(question,'user');
+  const loading=tambahPesanAi('Sedang berpikir…','bot'); kirim.disabled=true;
+  try {
+    const {data:{session}}=await supabaseDb.auth.getSession();
+    if(!session?.access_token) throw new Error('Sesi login tidak ditemukan. Silakan masuk ulang.');
+    const respons=await fetch(SUPABASE_CONFIG.url+'/functions/v1/clever-processor', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_CONFIG.anonKey},
+      body:JSON.stringify({question})
+    });
+    const hasil=await respons.json().catch(()=>({}));
+    if(!respons.ok) throw new Error(hasil.error || 'AI belum dapat dihubungi.');
+    loading.textContent=hasil.answer || 'Maaf, saya belum dapat menjawab.';
+  } catch(error) { loading.textContent='AI tidak dapat dihubungi: '+(error.message||error); }
+  finally { kirim.disabled=false; }
+};
 function sbError(error) { if (error) throw new Error(error.message || String(error)); }
 function adalahKesalahanKoneksi(error) {
   const pesan = String(error?.message || error || '').toLowerCase();
@@ -5400,6 +5490,7 @@ window.bukaAplikasi = function(session) {
   userEmailAktif=session.user.email; localStorage.setItem('isLoggedInDev','true'); localStorage.setItem('userEmailDev',userEmailAktif);
   document.getElementById('login-screen').style.display='none'; document.getElementById('main-app').style.display='block';
   document.getElementById('user-display').innerText=userEmailAktif; document.getElementById('greeting-name').innerText=userEmailAktif.split('@')[0]; document.getElementById('sidebarAvatar').innerText=userEmailAktif.charAt(0).toUpperCase();
+  document.getElementById('aiFab').style.display='block';
   updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false);
 };
 window.checkAuth = async function() {
