@@ -1217,6 +1217,9 @@
     .ai-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; color:#202020; background:var(--accent); border-bottom:2px solid var(--border-strong); font-weight:800; }
     .ai-head small { display:block; margin-top:2px; font-size:11px; font-weight:600; opacity:.78; }
     .ai-close { width:32px; height:32px; border:1.5px solid var(--border-strong); border-radius:9px; color:#202020; background:rgba(255,255,255,.45); cursor:pointer; font-size:19px; }
+    .ai-head-actions { display:flex; align-items:center; gap:7px; }
+    .ai-clear { height:32px; padding:0 9px; border:1.5px solid var(--border-strong); border-radius:9px; color:#202020; background:rgba(255,255,255,.45); cursor:pointer; font:inherit; font-size:11px; font-weight:700; }
+    .ai-clear:hover, .ai-close:hover { background:rgba(255,255,255,.75); }
     .ai-messages { flex:1; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:10px; background:var(--bg); }
     .ai-msg { max-width:88%; padding:10px 12px; border:1.5px solid var(--border); border-radius:12px; line-height:1.45; font-size:13px; white-space:pre-wrap; }
     .ai-msg.bot { align-self:flex-start; background:var(--surface); color:var(--text-primary); }
@@ -1468,6 +1471,21 @@
         </button>
       </div>
 
+<details style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:12px;background:var(--card-bg,#fff);color:var(--text-primary,#1e293b)">
+<summary style="cursor:pointer;font-weight:700">Backup Google Drive</summary>
+<p>Tujuan: folder backup Anda. Data: paket masuk, paket keluar, dokumen, kontak pengambil, dan log aktivitas. Format JSON, menyimpan ID asli. Foto hanya berupa tautan; berkas foto, akun login, PIN, serta pengaturan rahasia tidak disalin.</p>
+<button class="btn btn-ghost" id="btnBackupDrive" onclick="backupDriveManual()">Backup sekarang</button>
+<a class="btn btn-ghost" href="https://drive.google.com/drive/folders/1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v" target="_blank" rel="noopener">Buka folder</a>
+<p id="backupDriveStatus" role="status" aria-live="polite">Backup otomatis memerlukan aktivasi satu kali di Google Apps Script. Status jadwal dilihat di Apps Script.</p>
+<details><summary>Panduan backup otomatis harian</summary>
+<p>Jadwal sekitar pukul 23.00–24.00 WITA, tetap berjalan saat aplikasi ditutup. Google Apps Script menjalankan jadwal; sumber data tetap Supabase.</p>
+<ol><li>Klik <button class="btn btn-ghost" onclick="unduhScriptBackup()">Unduh script backup</button>, lalu buka file dengan editor teks.</li>
+<li>Buka <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> memakai akun yang dapat menulis ke folder tujuan. Buat project baru dan tempel isi script ke Code.gs.</li>
+<li>Di Supabase project <b>packetpacket's Project</b>, buka Settings → API Keys → Legacy API Keys, salin key <b>service_role</b>. Di Apps Script buka Project Settings → Script Properties: nama <b>SUPABASE_SERVICE_ROLE_KEY</b>, nilai key tadi. Simpan key hanya di Script Properties, jangan di HTML atau chat. Batasi editor project Apps Script.</li>
+<li>Pilih fungsi <b>aktifkanBackupOtomatis</b> → Run → berikan izin Google. Fungsi mencoba satu backup terlebih dahulu, lalu membuat jadwal jika berhasil.</li>
+<li>Pastikan file JSON muncul di folder dan trigger <b>backupHarian</b> muncul di menu Triggers. Periksa hasil berikutnya di Executions. Jika gagal, tidak ada backup sukses baru; pesan error juga disimpan dalam Script Properties.</li></ol>
+<p>Backup tidak menghapus file lama. Backup manual mengikuti izin data akun yang masuk dan mengambil tabel secara berurutan. Backup harian mengambil kelima tabel dalam satu snapshot database. Untuk mematikan jadwal, jalankan <b>nonaktifkanBackupOtomatis</b>. Restore belum disertakan.</p>
+</details></details>
       <!-- RIWAYAT DATA -->
       <div class="section-header">
         <div class="section-title">Riwayat data terakhir</div>
@@ -1741,7 +1759,10 @@
 <section class="ai-panel" id="aiPanel" aria-label="Asisten AI Bolang Paket">
   <div class="ai-head">
     <div><i class="ti ti-sparkles"></i> Asisten Bolang<small>Ringkasan data paket</small></div>
-    <button class="ai-close" type="button" onclick="toggleAiChat()" aria-label="Tutup chat"><i class="ti ti-x"></i></button>
+    <div class="ai-head-actions">
+      <button class="ai-clear" type="button" onclick="clearAiChat()" title="Hapus semua percakapan">Hapus chat</button>
+      <button class="ai-close" type="button" onclick="toggleAiChat()" aria-label="Tutup chat"><i class="ti ti-x"></i></button>
+    </div>
   </div>
   <div class="ai-messages" id="aiMessages">
     <div class="ai-msg bot">Halo! Saya Asisten Bolang. Tanyakan ringkasan paket, misalnya: “Berapa paket masuk saat ini?”</div>
@@ -5041,17 +5062,32 @@ let supabaseDb;
 function supabaseSiap() {
   return SUPABASE_CONFIG.url.indexOf('ISI_') !== 0 && SUPABASE_CONFIG.anonKey.indexOf('ISI_') !== 0;
 }
+const AI_CHAT_IDLE_MS = 10 * 60 * 1000;
+const AI_CHAT_GREETING = 'Halo! Saya Asisten Bolang. Tanyakan ringkasan paket, misalnya: “Berapa paket masuk saat ini?”';
+let aiChatIdleTimer;
+function resetAiChatIdleTimer() {
+  clearTimeout(aiChatIdleTimer);
+  aiChatIdleTimer = setTimeout(() => window.clearAiChat(true), AI_CHAT_IDLE_MS);
+}
+window.clearAiChat = function(silent=false) {
+  const box=document.getElementById('aiMessages'); if (!box) return;
+  clearTimeout(aiChatIdleTimer);
+  box.replaceChildren();
+  tambahPesanAi(AI_CHAT_GREETING,'bot');
+  if (!silent) document.getElementById('aiInput')?.focus();
+};
 function tambahPesanAi(teks, jenis) {
   const box=document.getElementById('aiMessages'); if (!box) return;
   const pesan=document.createElement('div'); pesan.className='ai-msg '+jenis; pesan.textContent=teks;
   box.appendChild(pesan); box.scrollTop=box.scrollHeight;
+  resetAiChatIdleTimer();
   return pesan;
 }
 window.toggleAiChat = function() {
   const panel=document.getElementById('aiPanel');
   if (!panel) return;
   panel.classList.toggle('open');
-  if(panel.classList.contains('open')) setTimeout(()=>document.getElementById('aiInput')?.focus(),50);
+  if(panel.classList.contains('open')) { resetAiChatIdleTimer(); setTimeout(()=>document.getElementById('aiInput')?.focus(),50); }
 };
 window.kirimPesanAi = async function(event) {
   event.preventDefault();
@@ -5501,6 +5537,50 @@ window.checkAuth = async function() {
   data-trbtn-size="40"
   data-trbtn-position="none"
   defer>
+</script>
+<script>
+
+const BOLANG_BACKUP_TABLES = ['paket_masuk','paket_keluar','dokumen','kontak_pengambil','log_aktivitas'];
+const BOLANG_BACKUP_SCRIPT = "const BACKUP_FOLDER = '1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v';\nfunction backupHarian() {\n  const lock = LockService.getScriptLock();\n  if (!lock.tryLock(1000)) throw new Error('Backup lain masih berjalan');\n  const props = PropertiesService.getScriptProperties();\n  try {\n    const key = props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n    if (!key) throw new Error('Isi SUPABASE_SERVICE_ROLE_KEY di Script Properties');\n    const folder = DriveApp.getFolderById(BACKUP_FOLDER);\n    const res = UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/rpc/bolang_backup_snapshot', {\n      method:'post', contentType:'application/json', payload:'{}',\n      headers:{apikey:key, Authorization:'Bearer '+key}, muteHttpExceptions:true\n    });\n    if (res.getResponseCode() !== 200) throw new Error('Supabase gagal: HTTP '+res.getResponseCode());\n    const data = JSON.parse(res.getContentText());\n    if (data.format !== 'bolang-backup' || !data.tables) throw new Error('Format backup tidak valid');\n    const names = ['paket_masuk','paket_keluar','dokumen','kontak_pengambil','log_aktivitas'];\n    names.forEach(n=>{if(!Array.isArray(data.tables[n])) throw new Error('Tabel tidak lengkap: '+n);});\n    const stamp = Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd_HH-mm-ss');\n    const blob = Utilities.newBlob(JSON.stringify(data,null,2),'application/json','bolang_backup_'+stamp+'.json');\n    const file = folder.createFile(blob);\n    props.setProperties({BACKUP_LAST_SUCCESS:new Date().toISOString(), BACKUP_LAST_FILE:file.getUrl(), BACKUP_LAST_ERROR:''});\n    console.log('Backup berhasil: '+file.getUrl());\n    return file.getUrl();\n  } catch(e) { props.setProperty('BACKUP_LAST_ERROR', new Date().toISOString()+' '+e.message); throw e; }\n  finally { lock.releaseLock(); }\n}\nfunction aktifkanBackupOtomatis() {\n  backupHarian(); // Jangan aktifkan jadwal sebelum percobaan berhasil.\n  const existing = ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian');\n  const trigger = ScriptApp.newTrigger('backupHarian').timeBased().everyDays(1).atHour(23).inTimezone('Asia/Makassar').create();\n  existing.forEach(t=>ScriptApp.deleteTrigger(t));\n  console.log('Backup harian aktif sekitar pukul 23.00\u201324.00 WITA');\n}\nfunction nonaktifkanBackupOtomatis() {\n  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian').forEach(t=>ScriptApp.deleteTrigger(t));\n}\n";
+function unduhScriptBackup() {
+  const u=URL.createObjectURL(new Blob([BOLANG_BACKUP_SCRIPT],{type:'text/plain'}));
+  const a=document.createElement('a'); a.href=u; a.download='BackupSupabase.gs'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+async function backupDriveManual() {
+  const btn=document.getElementById('btnBackupDrive'), status=document.getElementById('backupDriveStatus');
+  btn.disabled=true; status.textContent='Mengambil data dari Supabase…';
+  try {
+    if(!supabaseDb) throw new Error('Masuk ke aplikasi terlebih dahulu.');
+    const {data:{session},error}=await supabaseDb.auth.getSession(); if(error) throw error;
+    const token=session?.provider_token || sessionStorage.getItem('googleDriveProviderToken');
+    if(!session || !token) throw new Error('Masuk kembali melalui Google untuk memberikan izin Drive.');
+    const tables={};
+    for(const name of BOLANG_BACKUP_TABLES) {
+      tables[name]=[];
+      for(let start=0;;start+=500) {
+        const {data,error}=await supabaseDb.from(name).select('*').order('id').range(start,start+499);
+        if(error) throw new Error('Gagal mengambil '+name+': '+error.message);
+        if(!Array.isArray(data)) throw new Error('Respons tidak valid: '+name);
+        tables[name].push(...data); if(data.length<500) break;
+      }
+    }
+    const payload={format:'bolang-backup',version:1,created_at:new Date().toISOString(),mode:'manual-rls',tables};
+    const name='bolang_manual_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+    status.textContent='Mengunggah ke Google Drive…';
+    const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','X-Upload-Content-Type':'application/json'},
+      body:JSON.stringify({name,parents:['1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v']})
+    });
+    if(!res.ok) throw new Error(res.status===401?'Izin Google kedaluwarsa. Keluar dan masuk kembali melalui Google.':'Tidak dapat mengunggah ke folder Drive (HTTP '+res.status+').');
+    const location=res.headers.get('Location'); if(!location) throw new Error('Alamat unggah tidak tersedia.');
+    const upload=await fetch(location,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload,null,2)});
+    if(!upload.ok) throw new Error('Unggah backup gagal (HTTP '+upload.status+').');
+    const file=await upload.json(); if(!file.id) throw new Error('Drive tidak memberikan ID backup.');
+    status.textContent='Backup manual berhasil: '+name;
+  } catch(e) {status.textContent='Backup gagal: '+e.message;}
+  finally {btn.disabled=false;}
+}
+
 </script>
 </body>
 </html>
