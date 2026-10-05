@@ -1471,6 +1471,23 @@
         </button>
       </div>
 
+<details style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:12px;background:var(--card-bg,#fff);color:var(--text-primary,#1e293b)">
+<summary style="cursor:pointer;font-weight:700" onclick="cekStatusBackupOtomatis()">Backup Google Drive</summary>
+<p id="backupAutoStatus" role="status" aria-live="polite">Memeriksa status backup otomatis…</p><p id="backupAutoDetail" style="font-size:13px"></p>
+<button class="btn btn-ghost" id="btnBackupDrive" onclick="backupDriveManual()">Backup sekarang</button>
+<a class="btn btn-ghost" href="https://drive.google.com/drive/folders/1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v" target="_blank" rel="noopener">Buka folder</a>
+<p id="backupDriveStatus" role="status" aria-live="polite"></p>
+<button class="btn btn-ghost" onclick="cekStatusBackupOtomatis()">Periksa status</button>
+<details id="backupTutorial"><summary>Panduan backup otomatis harian</summary>
+<p>Sudah memasang backup? Unduh script terbaru, ganti isi Code.gs, lalu jalankan <b>sinkronkanStatusBackup</b> sekali. Jadwal lama tetap digunakan. Sesudah itu klik <b>Periksa status</b> di sini.</p>
+<p>Jadwal sekitar pukul 23.00–24.00 WITA, tetap berjalan saat aplikasi ditutup. Google Apps Script menjalankan jadwal; sumber data tetap Supabase.</p>
+<ol><li>Klik <button class="btn btn-ghost" onclick="unduhScriptBackup()">Unduh script backup</button>, lalu buka file dengan editor teks.</li>
+<li>Buka <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> memakai akun yang dapat menulis ke folder tujuan. Buat project baru dan tempel isi script ke Code.gs. Jika sudah memasang script backup versi sebelumnya, ganti seluruh isinya dengan script baru ini.</li>
+<li>Di Supabase project <b>packetpacket's Project</b>, buka Settings → API Keys → Legacy API Keys, salin key <b>service_role</b>. Di Apps Script buka Project Settings → Script Properties: nama <b>SUPABASE_SERVICE_ROLE_KEY</b>, nilai key tadi. Simpan key hanya di Script Properties, jangan di HTML atau chat. Batasi editor project Apps Script.</li>
+<li>Pilih fungsi <b>aktifkanBackupOtomatis</b> → Run → berikan izin Google. Fungsi mencoba satu backup terlebih dahulu, lalu membuat jadwal jika berhasil.</li>
+<li>Pastikan file Excel (.xlsx) muncul di folder dan trigger <b>backupHarian</b> muncul di menu Triggers. Periksa hasil berikutnya di Executions. Jika gagal, tidak ada backup sukses baru; pesan error juga disimpan dalam Script Properties.</li></ol>
+<p>Backup tidak menghapus file lama. Backup manual mengikuti izin data akun yang masuk dan mengambil tabel secara berurutan. Backup harian mengambil data dari satu snapshot database dan menghasilkan dua sheet paket dengan waktu WITA. Untuk mematikan jadwal, jalankan <b>nonaktifkanBackupOtomatis</b>. Restore belum disertakan.</p>
+</details></details>
       <!-- RIWAYAT DATA -->
       <div class="section-header">
         <div class="section-title">Riwayat data terakhir</div>
@@ -5491,7 +5508,7 @@ window.bukaAplikasi = function(session) {
   document.getElementById('login-screen').style.display='none'; document.getElementById('main-app').style.display='block';
   document.getElementById('user-display').innerText=userEmailAktif; document.getElementById('greeting-name').innerText=userEmailAktif.split('@')[0]; document.getElementById('sidebarAvatar').innerText=userEmailAktif.charAt(0).toUpperCase();
   document.getElementById('aiFab').style.display='block';
-  updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false);
+  updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false); cekStatusBackupOtomatis();
 };
 window.checkAuth = async function() {
   if (!supabaseSiap()) return;
@@ -5522,6 +5539,89 @@ window.checkAuth = async function() {
   data-trbtn-size="40"
   data-trbtn-position="none"
   defer>
+</script>
+<script>
+
+const BOLANG_BACKUP_TABLES = ['paket_masuk','paket_keluar'];
+
+function susunSheetBackup(tables, timeFormatter, timestampFormatter) {
+  const sortRows=rows=>rows.slice().sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')) || String(a.id||'').localeCompare(String(b.id||'')));
+  const clean=rows=>rows.map(row=>row.map(v=>v==null?'':v));
+  const masuk=clean(sortRows(tables.paket_masuk||[]).filter(x=>String(x.resi||'').trim() || String(x.alamat||'').trim()).map(x=>[x.resi,x.alamat,x.jumlah,timestampFormatter(timeFormatter(x.created_at))]));
+  const keluar=clean(sortRows(tables.paket_keluar||[]).filter(x=>String(x.pemilik||'').trim() || String(x.pengambil||'').trim()).map(x=>[x.pemilik,x.alamat,x.pengambil,x.no_hp,x.jumlah_fnb,x.jumlah_paket,x.disposal,timestampFormatter(timeFormatter(x.created_at)),x.daftar_resi]));
+  const result=[];
+  if(masuk.length) result.push({name:'Paket Masuk',headers:['Nomor Resi','Alamat','Jumlah','Jam'],rows:masuk});
+  if(keluar.length) result.push({name:'Paket Keluar',headers:['Pemilik Paket','Alamat','Pengambil','No. Tlp','Jumlah FnB','Jumlah Paket','Disposal','Jam','Nomor Resi'],rows:keluar});
+  if(!result.length) throw new Error('Tidak ada data untuk diexport.');
+  return result;
+}
+
+const BOLANG_BACKUP_SCRIPT = "const BACKUP_FOLDER = '1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v';\nfunction backupHarian() {\n  const lock = LockService.getScriptLock();\n  if (!lock.tryLock(1000)) throw new Error('Backup lain masih berjalan');\n  const props = PropertiesService.getScriptProperties();\n  try {\n    const key = props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n    if (!key) throw new Error('Isi SUPABASE_SERVICE_ROLE_KEY di Script Properties');\n    const folder = DriveApp.getFolderById(BACKUP_FOLDER);\n    const res = UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/rpc/bolang_backup_snapshot', {\n      method:'post', contentType:'application/json', payload:'{}',\n      headers:{apikey:key, Authorization:'Bearer '+key}, muteHttpExceptions:true\n    });\n    if (res.getResponseCode() !== 200) throw new Error('Supabase gagal: HTTP '+res.getResponseCode());\n    const data = JSON.parse(res.getContentText());\n    if (data.format !== 'bolang-backup' || !data.tables) throw new Error('Format backup tidak valid');\n    const names = ['paket_masuk','paket_keluar','dokumen','kontak_pengambil','log_aktivitas'];\n    names.forEach(n=>{if(!Array.isArray(data.tables[n])) throw new Error('Tabel tidak lengkap: '+n);});\n    const stamp = Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd_HH-mm-ss');\n    const sheets = susunSheetBackup(data.tables, iso => iso ? new Date(iso).toLocaleTimeString('id-ID',{timeZone:'Asia/Makassar',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '', formatTimestampToTime);\n    const blob = buatExcelBackup(sheets, 'Paket_'+stamp+'.xlsx');\n    const file = folder.createFile(blob);\n    props.setProperties({BACKUP_LAST_SUCCESS:new Date().toISOString(), BACKUP_LAST_FILE:file.getUrl(), BACKUP_LAST_ERROR:''});\n    sinkronkanStatusBackup('success');\n    console.log('Backup berhasil: '+file.getUrl());\n    return file.getUrl();\n  } catch(e) { props.setProperty('BACKUP_LAST_ERROR', new Date().toISOString()+' '+e.message); sinkronkanStatusBackup('error'); throw e; }\n  finally { lock.releaseLock(); }\n}\nfunction aktifkanBackupOtomatis() {\n  backupHarian(); // Jangan aktifkan jadwal sebelum percobaan berhasil.\n  const existing = ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian');\n  const trigger = ScriptApp.newTrigger('backupHarian').timeBased().everyDays(1).atHour(23).inTimezone('Asia/Makassar').create();\n  existing.forEach(t=>ScriptApp.deleteTrigger(t));\n  sinkronkanStatusBackup();\n  console.log('Backup harian aktif sekitar pukul 23.00\u201324.00 WITA');\n}\nfunction nonaktifkanBackupOtomatis() {\n  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian').forEach(t=>ScriptApp.deleteTrigger(t));\n  sinkronkanStatusBackup();\n}\n\n// Excel OOXML: seluruh string ditulis sebagai inlineStr, bukan formula.\nfunction xmlBackup(v) {\n  return String(v).replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/g, '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&apos;');\n}\nfunction kolomExcel(n) {\n  let out=''; for(n++;n>0;n=Math.floor((n-1)/26)) out=String.fromCharCode(65+(n-1)%26)+out;\n  return out;\n}\nfunction selExcel(v,ref) {\n  if(v===null || v===undefined) return '<c r=\"'+ref+'\"/>';\n  if(typeof v==='number' && Number.isFinite(v)) return '<c r=\"'+ref+'\"><v>'+v+'</v></c>';\n  if(typeof v==='boolean') return '<c r=\"'+ref+'\" t=\"b\"><v>'+(v?1:0)+'</v></c>';\n  const text=typeof v==='object'?JSON.stringify(v):String(v);\n  if(text.length>32767) throw new Error('Isi sel melebihi batas Excel: '+ref);\n  return '<c r=\"'+ref+'\" t=\"inlineStr\"><is><t xml:space=\"preserve\">'+xmlBackup(text)+'</t></is></c>';\n}\nfunction buatExcelBackup(sheetsData,filename) {\n  const blobs=[];\n  const add=(name,xml)=>blobs.push(Utilities.newBlob(xml,'application/xml',name));\n  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';\n  let sheets='',rels='',types='';\n  sheetsData.forEach((sheet,i)=>{\n    const name=sheet.name, headers=sheet.headers;\n    const rows=[headers].concat(sheet.rows);\n    if(rows.length>1048576 || headers.length>16384) throw new Error('Tabel melebihi batas Excel: '+name);\n    let xml='<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"'+ns+'\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><cols>'+headers.map((h,c)=>{let max=String(h||'').length;sheet.rows.forEach(r=>{max=Math.max(max,String(r[c]==null?'':r[c]).length);});return '<col min=\"'+(c+1)+'\" max=\"'+(c+1)+'\" width=\"'+Math.min(Math.max(max+2,8),40)+'\" customWidth=\"1\"/>';}).join('')+'</cols><sheetData>' ;\n    rows.forEach((row,r)=>{xml+='<row r=\"'+(r+1)+'\">'+row.map((v,c)=>selExcel(v,kolomExcel(c)+(r+1))).join('')+'</row>';});\n    xml+='</sheetData></worksheet>';\n    add('xl/worksheets/sheet'+(i+1)+'.xml',xml);\n    sheets+='<sheet name=\"'+xmlBackup(name)+'\" sheetId=\"'+(i+1)+'\" r:id=\"rId'+(i+1)+'\"/>';\n    rels+='<Relationship Id=\"rId'+(i+1)+'\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet'+(i+1)+'.xml\"/>';\n    types+='<Override PartName=\"/xl/worksheets/sheet'+(i+1)+'.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>';\n  });\n  add('xl/workbook.xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><workbook xmlns=\"'+ns+'\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>'+sheets+'</sheets></workbook>');\n  add('xl/_rels/workbook.xml.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">'+rels+'</Relationships>');\n  add('_rels/.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>');\n  add('[Content_Types].xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>'+types+'</Types>');\n  return Utilities.zip(blobs,filename).setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');\n}\n\nfunction susunSheetBackup(tables, timeFormatter, timestampFormatter) {\n  const sortRows=rows=>rows.slice().sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')) || String(a.id||'').localeCompare(String(b.id||'')));\n  const clean=rows=>rows.map(row=>row.map(v=>v==null?'':v));\n  const masuk=clean(sortRows(tables.paket_masuk||[]).filter(x=>String(x.resi||'').trim() || String(x.alamat||'').trim()).map(x=>[x.resi,x.alamat,x.jumlah,timestampFormatter(timeFormatter(x.created_at))]));\n  const keluar=clean(sortRows(tables.paket_keluar||[]).filter(x=>String(x.pemilik||'').trim() || String(x.pengambil||'').trim()).map(x=>[x.pemilik,x.alamat,x.pengambil,x.no_hp,x.jumlah_fnb,x.jumlah_paket,x.disposal,timestampFormatter(timeFormatter(x.created_at)),x.daftar_resi]));\n  const result=[];\n  if(masuk.length) result.push({name:'Paket Masuk',headers:['Nomor Resi','Alamat','Jumlah','Jam'],rows:masuk});\n  if(keluar.length) result.push({name:'Paket Keluar',headers:['Pemilik Paket','Alamat','Pengambil','No. Tlp','Jumlah FnB','Jumlah Paket','Disposal','Jam','Nomor Resi'],rows:keluar});\n  if(!result.length) throw new Error('Tidak ada data untuk diexport.');\n  return result;\n}\n  function formatTimestampToTime(timestamp) {\n    if (!timestamp) return '';\n    try {\n      // Parse timestamp ISO: 1899-12-30T05:26:07.000Z\n      const date = new Date(timestamp);\n      if (isNaN(date.getTime())) return timestamp; // Jika invalid, return as-is\n\n      const KOREKSI_DETIK = 7 * 3600 + 7 * 60 + 12; // 7 jam 7 menit 12 detik = 25632 detik\n\n      let totalDetik = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds();\n      totalDetik = ((totalDetik - KOREKSI_DETIK) % 86400 + 86400) % 86400; // wrap aman, hindari hasil negatif\n\n      const hours   = String(Math.floor(totalDetik / 3600)).padStart(2, '0');\n      const minutes = String(Math.floor((totalDetik % 3600) / 60)).padStart(2, '0');\n      const seconds = String(totalDetik % 60).padStart(2, '0');\n\n      return `${hours}:${minutes}:${seconds}`;\n    } catch (e) {\n      return timestamp; // Jika error, return original value\n    }\n  }\n\n\n// Jalankan sekali untuk mendeteksi jadwal yang sudah terpasang.\nfunction sinkronkanStatusBackup(result) {\n  const props=PropertiesService.getScriptProperties();\n  const key=props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n  if(!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY belum diisi');\n  const enabled=ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='backupHarian' && t.getEventType()===ScriptApp.EventType.CLOCK);\n  const last=props.getProperty('BACKUP_LAST_SUCCESS') || null;\n  const res=UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/bolang_backup_status?on_conflict=id',{\n    method:'post',contentType:'application/json',headers:{apikey:key,Authorization:'Bearer '+key,Prefer:'resolution=merge-duplicates'},\n    payload:JSON.stringify({id:1,enabled,last_success:last,last_result:result || (props.getProperty('BACKUP_LAST_ERROR')?'error':last?'success':'unknown'),reported_at:new Date().toISOString()}),muteHttpExceptions:true\n  });\n  if(res.getResponseCode()<200 || res.getResponseCode()>=300) throw new Error('Sinkronisasi status gagal: HTTP '+res.getResponseCode());\n  console.log(enabled?'Status backup otomatis aktif':'Status backup otomatis belum aktif');\n}\n";
+function unduhScriptBackup() {
+  const u=URL.createObjectURL(new Blob([BOLANG_BACKUP_SCRIPT],{type:'text/plain'}));
+  const a=document.createElement('a'); a.href=u; a.download='BackupSupabase.gs'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+
+async function cekStatusBackupOtomatis() {
+  const label=document.getElementById('backupAutoStatus'), detail=document.getElementById('backupAutoDetail'), guide=document.getElementById('backupTutorial');
+  if(!label || !supabaseDb) return;
+  label.textContent='Memeriksa status backup otomatis…';
+  try {
+    const {data,error}=await supabaseDb.from('bolang_backup_status').select('enabled,last_success,last_result,reported_at').eq('id',1).maybeSingle();
+    if(error) throw error;
+    const fmt=t=>new Date(t).toLocaleString('id-ID',{timeZone:'Asia/Makassar'})+' WITA';
+    const stale=data && Date.now()-new Date(data.reported_at).getTime()>36*60*60*1000;
+    guide.hidden=Boolean(data?.enabled && !stale); guide.open=false;
+    if(!data) {label.textContent='Status backup otomatis belum terhubung.';detail.textContent='Jika jadwal sudah aktif, ikuti langkah sinkronisasi pada panduan.';}
+    else if(stale) {label.textContent='Status backup otomatis perlu diperiksa.';detail.textContent='Laporan terakhir: '+fmt(data.reported_at)+'. Periksa jadwal di Apps Script, lalu sinkronkan status.';}
+    else if(data.enabled) {label.textContent='✓ Backup otomatis sudah aktif';label.style.color='var(--success,#15803d)';detail.textContent='Harian sekitar 23.00–24.00 WITA'+(data.last_success?' · Backup terakhir: '+fmt(data.last_success):' · Menunggu backup pertama')+(data.last_result==='error'?' · Percobaan terakhir gagal; periksa Executions di Apps Script.':'');}
+    else {label.textContent='Backup otomatis belum aktif.';detail.textContent='Ikuti panduan untuk mengaktifkan jadwal harian.';}
+    if(!data?.enabled || stale) label.style.color='';
+  } catch(e) {label.textContent='Status backup otomatis belum dapat diperiksa.';label.style.color='';detail.textContent='Periksa koneksi lalu klik Periksa status.';guide.hidden=false;guide.open=false;}
+}
+
+async function backupDriveManual() {
+  const btn=document.getElementById('btnBackupDrive'), status=document.getElementById('backupDriveStatus');
+  btn.disabled=true; status.textContent='Mengambil data dari Supabase…';
+  try {
+    if(!supabaseDb) throw new Error('Masuk ke aplikasi terlebih dahulu.');
+    const {data:{session},error}=await supabaseDb.auth.getSession(); if(error) throw error;
+    const token=session?.provider_token || sessionStorage.getItem('googleDriveProviderToken');
+    if(!session || !token) throw new Error('Masuk kembali melalui Google untuk memberikan izin Drive.');
+    const tables={};
+    for(const name of BOLANG_BACKUP_TABLES) {
+      tables[name]=[];
+      for(let start=0;;start+=500) {
+        const {data,error}=await supabaseDb.from(name).select('*').order(name === 'kontak_pengambil' ? 'nama' : 'id').range(start,start+499);
+        if(error) throw new Error('Gagal mengambil '+name+': '+error.message);
+        if(!Array.isArray(data)) throw new Error('Respons tidak valid: '+name);
+        tables[name].push(...data); if(data.length<500) break;
+      }
+    }
+    await ensureXLSX();
+    const wb=XLSX.utils.book_new();
+    const sheets=susunSheetBackup(tables,waktuLokal,formatTimestampToTime);
+    for(const sheet of sheets) {
+      XLSX.utils.book_append_sheet(wb,buatSheetDenganStyle(sheet.headers,sheet.rows),sheet.name);
+    }
+    const excel=XLSX.write(wb,{bookType:'xlsx',type:'array',compression:true});
+    const mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const name='Paket_'+new Date().toISOString().replace(/[:.]/g,'-')+'.xlsx';
+    status.textContent='Mengunggah ke Google Drive…';
+    const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','X-Upload-Content-Type':mime},
+      body:JSON.stringify({name,mimeType:mime,parents:['1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v']})
+    });
+    if(!res.ok) throw new Error(res.status===401?'Izin Google kedaluwarsa. Keluar dan masuk kembali melalui Google.':'Tidak dapat mengunggah ke folder Drive (HTTP '+res.status+').');
+    const location=res.headers.get('Location'); if(!location) throw new Error('Alamat unggah tidak tersedia.');
+    const upload=await fetch(location,{method:'PUT',headers:{'Content-Type':mime},body:excel});
+    if(!upload.ok) throw new Error('Unggah backup gagal (HTTP '+upload.status+').');
+    const file=await upload.json(); if(!file.id) throw new Error('Drive tidak memberikan ID backup.');
+    status.textContent='Backup manual berhasil: '+name;
+  } catch(e) {status.textContent='Backup gagal: '+e.message;}
+  finally {btn.disabled=false;}
+}
+
 </script>
 </body>
 </html>
