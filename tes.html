@@ -1247,7 +1247,7 @@
       .ai-panel { right:16px; bottom:150px; height:min(500px,calc(100vh - 178px)); }
     }
   </style>
-</head>
+<style>.bolang-scan{border:1px solid #cbd5e1;border-radius:12px;padding:12px;text-align:left}.scan-toolbar,.scan-controls,.scan-choices{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.scan-toolbar select{padding:8px;max-width:180px}.scan-preview{position:relative;background:#111;border-radius:10px;overflow:hidden;margin:10px 0}.scan-preview video{display:block;width:100%;max-height:340px;object-fit:contain}.scan-guide{position:absolute;pointer-events:none;left:5%;top:25%;width:90%;height:50%;border:2px solid #4ade80;border-radius:8px}.scan-guide.qr{left:25%;top:15%;width:50%;height:70%}.scan-message{font-size:14px;overflow-wrap:anywhere}.scan-controls [hidden]{display:none!important}.scan-choices button{max-width:100%;overflow-wrap:anywhere;white-space:normal}</style></head>
 <body>
 
 <!-- ============================================================
@@ -1472,12 +1472,14 @@
       </div>
 
 <details style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:12px;background:var(--card-bg,#fff);color:var(--text-primary,#1e293b)">
-<summary style="cursor:pointer;font-weight:700">Backup Google Drive</summary>
-<p>Tujuan: folder backup Anda. Format sama dengan menu Export Excel: sheet Paket Masuk dan Paket Keluar, kolom serta urutan yang sama. Backup mengambil seluruh data paket tanpa filter pencarian. Dokumen, kontak, log aktivitas, ID internal, dan foto tidak disertakan.</p>
+<summary style="cursor:pointer;font-weight:700" onclick="cekStatusBackupOtomatis()">Backup Google Drive</summary>
+<p id="backupAutoStatus" role="status" aria-live="polite">Memeriksa status backup otomatis…</p><p id="backupAutoDetail" style="font-size:13px"></p>
 <button class="btn btn-ghost" id="btnBackupDrive" onclick="backupDriveManual()">Backup sekarang</button>
 <a class="btn btn-ghost" href="https://drive.google.com/drive/folders/1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v" target="_blank" rel="noopener">Buka folder</a>
-<p id="backupDriveStatus" role="status" aria-live="polite">Backup otomatis memerlukan aktivasi satu kali di Google Apps Script. Status jadwal dilihat di Apps Script.</p>
-<details><summary>Panduan backup otomatis harian</summary>
+<p id="backupDriveStatus" role="status" aria-live="polite"></p>
+<button class="btn btn-ghost" onclick="cekStatusBackupOtomatis()">Periksa status</button>
+<details id="backupTutorial"><summary>Panduan backup otomatis harian</summary>
+<p>Sudah memasang backup? Unduh script terbaru, ganti isi Code.gs, lalu jalankan <b>sinkronkanStatusBackup</b> sekali. Jadwal lama tetap digunakan. Sesudah itu klik <b>Periksa status</b> di sini.</p>
 <p>Jadwal sekitar pukul 23.00–24.00 WITA, tetap berjalan saat aplikasi ditutup. Google Apps Script menjalankan jadwal; sumber data tetap Supabase.</p>
 <ol><li>Klik <button class="btn btn-ghost" onclick="unduhScriptBackup()">Unduh script backup</button>, lalu buka file dengan editor teks.</li>
 <li>Buka <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> memakai akun yang dapat menulis ke folder tujuan. Buat project baru dan tempel isi script ke Code.gs. Jika sudah memasang script backup versi sebelumnya, ganti seluruh isinya dengan script baru ini.</li>
@@ -2173,7 +2175,7 @@
     document.getElementById('readerDokMain').style.display          = 'block';
     document.getElementById('btnCloseScannerDokMain').style.display = 'block';
     if (!isScanningDokMain) {
-      scannerDokMain = new Html5QrcodeScanner('readerDokMain', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scannerDokMain = new BolangBarcodeScanner('readerDokMain', { fps: 10, qrbox: { width: 250, height: 150 } });
       scannerDokMain.render(text => {
         document.getElementById('dokMainResi').value = text;
         tutupScannerDokMain();
@@ -3209,7 +3211,8 @@
     }
   }
 
-  function hapusData(jenis, num) {
+  async function hapusData(jenis, num) {
+    if (!(await peringatanBackupSebelumHapus(jenis))) return;
     if (!confirm('Hapus data ini?')) return;
     fetch(`${SCRIPT_URL}?action=delete&type=${jenis}&row=${num}&email=${encodeURIComponent(userEmailAktif)}`, { mode: 'no-cors' })
       .then(() => muatSemuaData());
@@ -3217,6 +3220,7 @@
 
   async function handleDeleteAll() {
     const f = filterMode;
+    if (!(await peringatanBackupSebelumHapus(f))) return;
     const namaTarget = f === 'semua' ? 'PAKET MASUK DAN PAKET KELUAR' : (f === 'masuk' ? 'PAKET MASUK' : 'PAKET KELUAR');
     const pin = prompt(`⚠️ Hapus SEMUA ${namaTarget}?\nMasukkan PIN penghapusan:`);
     if (pin === null) return alert('Penghapusan dibatalkan.');
@@ -3290,7 +3294,7 @@
     document.getElementById('reader').style.display          = 'block';
     document.getElementById('btnCloseScanner').style.display = 'block';
     if (!isScanning) {
-      scanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scanner = new BolangBarcodeScanner('reader', { fps: 10, qrbox: { width: 250, height: 150 } });
       scanner.render(text => {
         if (target === 'masuk') {
           document.getElementById('resi').value = text;
@@ -4210,7 +4214,7 @@
     document.getElementById('readerDokumen').style.display          = 'block';
     document.getElementById('btnCloseScannerDokumen').style.display = 'block';
     if (!isScanningDokumen) {
-      scannerDokumen = new Html5QrcodeScanner('readerDokumen', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scannerDokumen = new BolangBarcodeScanner('readerDokumen', { fps: 10, qrbox: { width: 250, height: 150 } });
       scannerDokumen.render(text => {
         document.getElementById('dokResi').value = text;
         tutupScannerDokumen();
@@ -5506,7 +5510,7 @@ window.bukaAplikasi = function(session) {
   document.getElementById('login-screen').style.display='none'; document.getElementById('main-app').style.display='block';
   document.getElementById('user-display').innerText=userEmailAktif; document.getElementById('greeting-name').innerText=userEmailAktif.split('@')[0]; document.getElementById('sidebarAvatar').innerText=userEmailAktif.charAt(0).toUpperCase();
   document.getElementById('aiFab').style.display='block';
-  updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false);
+  updatePendingSyncBadge(); muatSemuaData(); muatDataKontak(); syncPendingData(false); cekStatusBackupOtomatis();
 };
 window.checkAuth = async function() {
   if (!supabaseSiap()) return;
@@ -5554,11 +5558,66 @@ function susunSheetBackup(tables, timeFormatter, timestampFormatter) {
   return result;
 }
 
-const BOLANG_BACKUP_SCRIPT = "const BACKUP_FOLDER = '1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v';\nfunction backupHarian() {\n  const lock = LockService.getScriptLock();\n  if (!lock.tryLock(1000)) throw new Error('Backup lain masih berjalan');\n  const props = PropertiesService.getScriptProperties();\n  try {\n    const key = props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n    if (!key) throw new Error('Isi SUPABASE_SERVICE_ROLE_KEY di Script Properties');\n    const folder = DriveApp.getFolderById(BACKUP_FOLDER);\n    const res = UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/rpc/bolang_backup_snapshot', {\n      method:'post', contentType:'application/json', payload:'{}',\n      headers:{apikey:key, Authorization:'Bearer '+key}, muteHttpExceptions:true\n    });\n    if (res.getResponseCode() !== 200) throw new Error('Supabase gagal: HTTP '+res.getResponseCode());\n    const data = JSON.parse(res.getContentText());\n    if (data.format !== 'bolang-backup' || !data.tables) throw new Error('Format backup tidak valid');\n    const names = ['paket_masuk','paket_keluar','dokumen','kontak_pengambil','log_aktivitas'];\n    names.forEach(n=>{if(!Array.isArray(data.tables[n])) throw new Error('Tabel tidak lengkap: '+n);});\n    const stamp = Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd_HH-mm-ss');\n    const sheets = susunSheetBackup(data.tables, iso => iso ? new Date(iso).toLocaleTimeString('id-ID',{timeZone:'Asia/Makassar',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '', formatTimestampToTime);\n    const blob = buatExcelBackup(sheets, 'Paket_'+stamp+'.xlsx');\n    const file = folder.createFile(blob);\n    props.setProperties({BACKUP_LAST_SUCCESS:new Date().toISOString(), BACKUP_LAST_FILE:file.getUrl(), BACKUP_LAST_ERROR:''});\n    console.log('Backup berhasil: '+file.getUrl());\n    return file.getUrl();\n  } catch(e) { props.setProperty('BACKUP_LAST_ERROR', new Date().toISOString()+' '+e.message); throw e; }\n  finally { lock.releaseLock(); }\n}\nfunction aktifkanBackupOtomatis() {\n  backupHarian(); // Jangan aktifkan jadwal sebelum percobaan berhasil.\n  const existing = ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian');\n  const trigger = ScriptApp.newTrigger('backupHarian').timeBased().everyDays(1).atHour(23).inTimezone('Asia/Makassar').create();\n  existing.forEach(t=>ScriptApp.deleteTrigger(t));\n  console.log('Backup harian aktif sekitar pukul 23.00\u201324.00 WITA');\n}\nfunction nonaktifkanBackupOtomatis() {\n  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian').forEach(t=>ScriptApp.deleteTrigger(t));\n}\n\n// Excel OOXML: seluruh string ditulis sebagai inlineStr, bukan formula.\nfunction xmlBackup(v) {\n  return String(v).replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/g, '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&apos;');\n}\nfunction kolomExcel(n) {\n  let out=''; for(n++;n>0;n=Math.floor((n-1)/26)) out=String.fromCharCode(65+(n-1)%26)+out;\n  return out;\n}\nfunction selExcel(v,ref) {\n  if(v===null || v===undefined) return '<c r=\"'+ref+'\"/>';\n  if(typeof v==='number' && Number.isFinite(v)) return '<c r=\"'+ref+'\"><v>'+v+'</v></c>';\n  if(typeof v==='boolean') return '<c r=\"'+ref+'\" t=\"b\"><v>'+(v?1:0)+'</v></c>';\n  const text=typeof v==='object'?JSON.stringify(v):String(v);\n  if(text.length>32767) throw new Error('Isi sel melebihi batas Excel: '+ref);\n  return '<c r=\"'+ref+'\" t=\"inlineStr\"><is><t xml:space=\"preserve\">'+xmlBackup(text)+'</t></is></c>';\n}\nfunction buatExcelBackup(sheetsData,filename) {\n  const blobs=[];\n  const add=(name,xml)=>blobs.push(Utilities.newBlob(xml,'application/xml',name));\n  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';\n  let sheets='',rels='',types='';\n  sheetsData.forEach((sheet,i)=>{\n    const name=sheet.name, headers=sheet.headers;\n    const rows=[headers].concat(sheet.rows);\n    if(rows.length>1048576 || headers.length>16384) throw new Error('Tabel melebihi batas Excel: '+name);\n    let xml='<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"'+ns+'\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><cols>'+headers.map((h,c)=>{let max=String(h||'').length;sheet.rows.forEach(r=>{max=Math.max(max,String(r[c]==null?'':r[c]).length);});return '<col min=\"'+(c+1)+'\" max=\"'+(c+1)+'\" width=\"'+Math.min(Math.max(max+2,8),40)+'\" customWidth=\"1\"/>';}).join('')+'</cols><sheetData>' ;\n    rows.forEach((row,r)=>{xml+='<row r=\"'+(r+1)+'\">'+row.map((v,c)=>selExcel(v,kolomExcel(c)+(r+1))).join('')+'</row>';});\n    xml+='</sheetData></worksheet>';\n    add('xl/worksheets/sheet'+(i+1)+'.xml',xml);\n    sheets+='<sheet name=\"'+xmlBackup(name)+'\" sheetId=\"'+(i+1)+'\" r:id=\"rId'+(i+1)+'\"/>';\n    rels+='<Relationship Id=\"rId'+(i+1)+'\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet'+(i+1)+'.xml\"/>';\n    types+='<Override PartName=\"/xl/worksheets/sheet'+(i+1)+'.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>';\n  });\n  add('xl/workbook.xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><workbook xmlns=\"'+ns+'\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>'+sheets+'</sheets></workbook>');\n  add('xl/_rels/workbook.xml.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">'+rels+'</Relationships>');\n  add('_rels/.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>');\n  add('[Content_Types].xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>'+types+'</Types>');\n  return Utilities.zip(blobs,filename).setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');\n}\n\nfunction susunSheetBackup(tables, timeFormatter, timestampFormatter) {\n  const sortRows=rows=>rows.slice().sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')) || String(a.id||'').localeCompare(String(b.id||'')));\n  const clean=rows=>rows.map(row=>row.map(v=>v==null?'':v));\n  const masuk=clean(sortRows(tables.paket_masuk||[]).filter(x=>String(x.resi||'').trim() || String(x.alamat||'').trim()).map(x=>[x.resi,x.alamat,x.jumlah,timestampFormatter(timeFormatter(x.created_at))]));\n  const keluar=clean(sortRows(tables.paket_keluar||[]).filter(x=>String(x.pemilik||'').trim() || String(x.pengambil||'').trim()).map(x=>[x.pemilik,x.alamat,x.pengambil,x.no_hp,x.jumlah_fnb,x.jumlah_paket,x.disposal,timestampFormatter(timeFormatter(x.created_at)),x.daftar_resi]));\n  const result=[];\n  if(masuk.length) result.push({name:'Paket Masuk',headers:['Nomor Resi','Alamat','Jumlah','Jam'],rows:masuk});\n  if(keluar.length) result.push({name:'Paket Keluar',headers:['Pemilik Paket','Alamat','Pengambil','No. Tlp','Jumlah FnB','Jumlah Paket','Disposal','Jam','Nomor Resi'],rows:keluar});\n  if(!result.length) throw new Error('Tidak ada data untuk diexport.');\n  return result;\n}\n  function formatTimestampToTime(timestamp) {\n    if (!timestamp) return '';\n    try {\n      // Parse timestamp ISO: 1899-12-30T05:26:07.000Z\n      const date = new Date(timestamp);\n      if (isNaN(date.getTime())) return timestamp; // Jika invalid, return as-is\n\n      const KOREKSI_DETIK = 7 * 3600 + 7 * 60 + 12; // 7 jam 7 menit 12 detik = 25632 detik\n\n      let totalDetik = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds();\n      totalDetik = ((totalDetik - KOREKSI_DETIK) % 86400 + 86400) % 86400; // wrap aman, hindari hasil negatif\n\n      const hours   = String(Math.floor(totalDetik / 3600)).padStart(2, '0');\n      const minutes = String(Math.floor((totalDetik % 3600) / 60)).padStart(2, '0');\n      const seconds = String(totalDetik % 60).padStart(2, '0');\n\n      return `${hours}:${minutes}:${seconds}`;\n    } catch (e) {\n      return timestamp; // Jika error, return original value\n    }\n  }\n\n";
+const BOLANG_BACKUP_SCRIPT = "const BACKUP_FOLDER = '1Yl8J5MrPb_M73oCG4xRiY60KrQHQuk9v';\nfunction backupHarian() {\n  const lock = LockService.getScriptLock();\n  if (!lock.tryLock(1000)) throw new Error('Backup lain masih berjalan');\n  const props = PropertiesService.getScriptProperties();\n  try {\n    const key = props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n    if (!key) throw new Error('Isi SUPABASE_SERVICE_ROLE_KEY di Script Properties');\n    const folder = DriveApp.getFolderById(BACKUP_FOLDER);\n    const res = UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/rpc/bolang_backup_snapshot', {\n      method:'post', contentType:'application/json', payload:'{}',\n      headers:{apikey:key, Authorization:'Bearer '+key}, muteHttpExceptions:true\n    });\n    if (res.getResponseCode() !== 200) throw new Error('Supabase gagal: HTTP '+res.getResponseCode());\n    const data = JSON.parse(res.getContentText());\n    if (data.format !== 'bolang-backup' || !data.tables) throw new Error('Format backup tidak valid');\n    const names = ['paket_masuk','paket_keluar','dokumen','kontak_pengambil','log_aktivitas'];\n    names.forEach(n=>{if(!Array.isArray(data.tables[n])) throw new Error('Tabel tidak lengkap: '+n);});\n    const stamp = Utilities.formatDate(new Date(), 'Asia/Makassar', 'yyyy-MM-dd_HH-mm-ss');\n    const sheets = susunSheetBackup(data.tables, iso => iso ? new Date(iso).toLocaleTimeString('id-ID',{timeZone:'Asia/Makassar',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '', formatTimestampToTime);\n    const blob = buatExcelBackup(sheets, 'Paket_'+stamp+'.xlsx');\n    const file = folder.createFile(blob);\n    props.setProperties({BACKUP_LAST_SUCCESS:new Date().toISOString(), BACKUP_LAST_FILE:file.getUrl(), BACKUP_LAST_ERROR:''});\n    sinkronkanStatusBackup('success');\n    console.log('Backup berhasil: '+file.getUrl());\n    return file.getUrl();\n  } catch(e) { props.setProperty('BACKUP_LAST_ERROR', new Date().toISOString()+' '+e.message); sinkronkanStatusBackup('error'); throw e; }\n  finally { lock.releaseLock(); }\n}\nfunction aktifkanBackupOtomatis() {\n  backupHarian(); // Jangan aktifkan jadwal sebelum percobaan berhasil.\n  const existing = ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian');\n  const trigger = ScriptApp.newTrigger('backupHarian').timeBased().everyDays(1).atHour(23).inTimezone('Asia/Makassar').create();\n  existing.forEach(t=>ScriptApp.deleteTrigger(t));\n  sinkronkanStatusBackup();\n  console.log('Backup harian aktif sekitar pukul 23.00\u201324.00 WITA');\n}\nfunction nonaktifkanBackupOtomatis() {\n  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='backupHarian').forEach(t=>ScriptApp.deleteTrigger(t));\n  sinkronkanStatusBackup();\n}\n\n// Excel OOXML: seluruh string ditulis sebagai inlineStr, bukan formula.\nfunction xmlBackup(v) {\n  return String(v).replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/g, '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&apos;');\n}\nfunction kolomExcel(n) {\n  let out=''; for(n++;n>0;n=Math.floor((n-1)/26)) out=String.fromCharCode(65+(n-1)%26)+out;\n  return out;\n}\nfunction selExcel(v,ref) {\n  if(v===null || v===undefined) return '<c r=\"'+ref+'\"/>';\n  if(typeof v==='number' && Number.isFinite(v)) return '<c r=\"'+ref+'\"><v>'+v+'</v></c>';\n  if(typeof v==='boolean') return '<c r=\"'+ref+'\" t=\"b\"><v>'+(v?1:0)+'</v></c>';\n  const text=typeof v==='object'?JSON.stringify(v):String(v);\n  if(text.length>32767) throw new Error('Isi sel melebihi batas Excel: '+ref);\n  return '<c r=\"'+ref+'\" t=\"inlineStr\"><is><t xml:space=\"preserve\">'+xmlBackup(text)+'</t></is></c>';\n}\nfunction buatExcelBackup(sheetsData,filename) {\n  const blobs=[];\n  const add=(name,xml)=>blobs.push(Utilities.newBlob(xml,'application/xml',name));\n  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';\n  let sheets='',rels='',types='';\n  sheetsData.forEach((sheet,i)=>{\n    const name=sheet.name, headers=sheet.headers;\n    const rows=[headers].concat(sheet.rows);\n    if(rows.length>1048576 || headers.length>16384) throw new Error('Tabel melebihi batas Excel: '+name);\n    let xml='<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><worksheet xmlns=\"'+ns+'\"><sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews><cols>'+headers.map((h,c)=>{let max=String(h||'').length;sheet.rows.forEach(r=>{max=Math.max(max,String(r[c]==null?'':r[c]).length);});return '<col min=\"'+(c+1)+'\" max=\"'+(c+1)+'\" width=\"'+Math.min(Math.max(max+2,8),40)+'\" customWidth=\"1\"/>';}).join('')+'</cols><sheetData>' ;\n    rows.forEach((row,r)=>{xml+='<row r=\"'+(r+1)+'\">'+row.map((v,c)=>selExcel(v,kolomExcel(c)+(r+1))).join('')+'</row>';});\n    xml+='</sheetData></worksheet>';\n    add('xl/worksheets/sheet'+(i+1)+'.xml',xml);\n    sheets+='<sheet name=\"'+xmlBackup(name)+'\" sheetId=\"'+(i+1)+'\" r:id=\"rId'+(i+1)+'\"/>';\n    rels+='<Relationship Id=\"rId'+(i+1)+'\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet'+(i+1)+'.xml\"/>';\n    types+='<Override PartName=\"/xl/worksheets/sheet'+(i+1)+'.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>';\n  });\n  add('xl/workbook.xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><workbook xmlns=\"'+ns+'\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>'+sheets+'</sheets></workbook>');\n  add('xl/_rels/workbook.xml.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">'+rels+'</Relationships>');\n  add('_rels/.rels','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>');\n  add('[Content_Types].xml','<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>'+types+'</Types>');\n  return Utilities.zip(blobs,filename).setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');\n}\n\nfunction susunSheetBackup(tables, timeFormatter, timestampFormatter) {\n  const sortRows=rows=>rows.slice().sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')) || String(a.id||'').localeCompare(String(b.id||'')));\n  const clean=rows=>rows.map(row=>row.map(v=>v==null?'':v));\n  const masuk=clean(sortRows(tables.paket_masuk||[]).filter(x=>String(x.resi||'').trim() || String(x.alamat||'').trim()).map(x=>[x.resi,x.alamat,x.jumlah,timestampFormatter(timeFormatter(x.created_at))]));\n  const keluar=clean(sortRows(tables.paket_keluar||[]).filter(x=>String(x.pemilik||'').trim() || String(x.pengambil||'').trim()).map(x=>[x.pemilik,x.alamat,x.pengambil,x.no_hp,x.jumlah_fnb,x.jumlah_paket,x.disposal,timestampFormatter(timeFormatter(x.created_at)),x.daftar_resi]));\n  const result=[];\n  if(masuk.length) result.push({name:'Paket Masuk',headers:['Nomor Resi','Alamat','Jumlah','Jam'],rows:masuk});\n  if(keluar.length) result.push({name:'Paket Keluar',headers:['Pemilik Paket','Alamat','Pengambil','No. Tlp','Jumlah FnB','Jumlah Paket','Disposal','Jam','Nomor Resi'],rows:keluar});\n  if(!result.length) throw new Error('Tidak ada data untuk diexport.');\n  return result;\n}\n  function formatTimestampToTime(timestamp) {\n    if (!timestamp) return '';\n    try {\n      // Parse timestamp ISO: 1899-12-30T05:26:07.000Z\n      const date = new Date(timestamp);\n      if (isNaN(date.getTime())) return timestamp; // Jika invalid, return as-is\n\n      const KOREKSI_DETIK = 7 * 3600 + 7 * 60 + 12; // 7 jam 7 menit 12 detik = 25632 detik\n\n      let totalDetik = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds();\n      totalDetik = ((totalDetik - KOREKSI_DETIK) % 86400 + 86400) % 86400; // wrap aman, hindari hasil negatif\n\n      const hours   = String(Math.floor(totalDetik / 3600)).padStart(2, '0');\n      const minutes = String(Math.floor((totalDetik % 3600) / 60)).padStart(2, '0');\n      const seconds = String(totalDetik % 60).padStart(2, '0');\n\n      return `${hours}:${minutes}:${seconds}`;\n    } catch (e) {\n      return timestamp; // Jika error, return original value\n    }\n  }\n\n\n// Jalankan sekali untuk mendeteksi jadwal yang sudah terpasang.\nfunction sinkronkanStatusBackup(result) {\n  const props=PropertiesService.getScriptProperties();\n  const key=props.getProperty('SUPABASE_SERVICE_ROLE_KEY');\n  if(!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY belum diisi');\n  const enabled=ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='backupHarian' && t.getEventType()===ScriptApp.EventType.CLOCK);\n  const last=props.getProperty('BACKUP_LAST_SUCCESS') || null;\n  const res=UrlFetchApp.fetch('https://zvrygmcpytpxhqntmnjc.supabase.co/rest/v1/bolang_backup_status?on_conflict=id',{\n    method:'post',contentType:'application/json',headers:{apikey:key,Authorization:'Bearer '+key,Prefer:'resolution=merge-duplicates'},\n    payload:JSON.stringify({id:1,enabled,last_success:last,last_result:result || (props.getProperty('BACKUP_LAST_ERROR')?'error':last?'success':'unknown'),reported_at:new Date().toISOString()}),muteHttpExceptions:true\n  });\n  if(res.getResponseCode()<200 || res.getResponseCode()>=300) throw new Error('Sinkronisasi status gagal: HTTP '+res.getResponseCode());\n  console.log(enabled?'Status backup otomatis aktif':'Status backup otomatis belum aktif');\n}\n";
 function unduhScriptBackup() {
   const u=URL.createObjectURL(new Blob([BOLANG_BACKUP_SCRIPT],{type:'text/plain'}));
   const a=document.createElement('a'); a.href=u; a.download='BackupSupabase.gs'; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000);
 }
+
+
+function tanggalWitaBackup(t) {
+  return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Makassar',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t));
+}
+function pesanPeringatanBackup(status, latest, now=new Date()) {
+  if(!status || !status.last_success) return 'Data belum di-backup otomatis. Belum ada backup otomatis yang berhasil tercatat.';
+  if(status.last_result==='error') return 'Backup otomatis terakhir gagal. Data terbaru mungkin belum tersimpan.';
+  if(tanggalWitaBackup(status.last_success)!==tanggalWitaBackup(now)) return 'Data hari ini belum di-backup otomatis. Jadwal backup sekitar pukul 23.00–24.00 WITA.';
+  if(latest && new Date(latest)>new Date(status.last_success)) return 'Ada data baru atau perubahan setelah backup otomatis terakhir. Data terbaru belum di-backup otomatis.';
+  return '';
+}
+async function peringatanBackupSebelumHapus(target) {
+  let message='';
+  try {
+    if(!supabaseDb) throw new Error('Belum terhubung');
+    const {data:status,error}=await supabaseDb.from('bolang_backup_status').select('last_success,last_result').eq('id',1).maybeSingle();
+    if(error) throw error;
+    message=pesanPeringatanBackup(status,null);
+    if(!message) {
+      const tables=target==='masuk'?['paket_masuk']:target==='keluar'?['paket_keluar']:['paket_masuk','paket_keluar'];
+      const checks=await Promise.all(tables.map(async table=>{
+        const {data,error}=await supabaseDb.from(table).select('created_at').order('created_at',{ascending:false}).limit(1);
+        if(error) throw error;return data?.[0]?.created_at;
+      }));
+      const kinds=target==='masuk'?['Paket Masuk']:target==='keluar'?['Paket Keluar']:['Paket Masuk','Paket Keluar'];
+      const {data:logs,error:logError}=await supabaseDb.from('log_aktivitas').select('created_at').in('jenis_data',kinds).eq('aksi','Edit').order('created_at',{ascending:false}).limit(1);
+      if(logError) throw logError;
+      checks.push(logs?.[0]?.created_at);
+      const latest=checks.filter(Boolean).sort((a,b)=>new Date(b)-new Date(a))[0];
+      message=pesanPeringatanBackup(status,latest);
+    }
+  } catch(e) {message='Status backup otomatis belum dapat dipastikan. Data yang akan dihapus mungkin belum di-backup.';}
+  if(!message) return true;
+  return confirm('⚠️ '+message+'\n\nSebaiknya lakukan Backup sekarang dan pastikan file Excel tersimpan di Drive sebelum menghapus.\n\nTetap lanjutkan penghapusan?');
+}
+
+async function cekStatusBackupOtomatis() {
+  const label=document.getElementById('backupAutoStatus'), detail=document.getElementById('backupAutoDetail'), guide=document.getElementById('backupTutorial');
+  if(!label || !supabaseDb) return;
+  label.textContent='Memeriksa status backup otomatis…';
+  try {
+    const {data,error}=await supabaseDb.from('bolang_backup_status').select('enabled,last_success,last_result,reported_at').eq('id',1).maybeSingle();
+    if(error) throw error;
+    const fmt=t=>new Date(t).toLocaleString('id-ID',{timeZone:'Asia/Makassar'})+' WITA';
+    const stale=data && Date.now()-new Date(data.reported_at).getTime()>36*60*60*1000;
+    guide.hidden=Boolean(data?.enabled && !stale); guide.open=false;
+    if(!data) {label.textContent='Status backup otomatis belum terhubung.';detail.textContent='Jika jadwal sudah aktif, ikuti langkah sinkronisasi pada panduan.';}
+    else if(stale) {label.textContent='Status backup otomatis perlu diperiksa.';detail.textContent='Laporan terakhir: '+fmt(data.reported_at)+'. Periksa jadwal di Apps Script, lalu sinkronkan status.';}
+    else if(data.enabled) {label.textContent='✓ Backup otomatis sudah aktif';label.style.color='var(--success,#15803d)';detail.textContent='Harian sekitar 23.00–24.00 WITA'+(data.last_success?' · Backup terakhir: '+fmt(data.last_success):' · Menunggu backup pertama')+(data.last_result==='error'?' · Percobaan terakhir gagal; periksa Executions di Apps Script.':'');}
+    else {label.textContent='Backup otomatis belum aktif.';detail.textContent='Ikuti panduan untuk mengaktifkan jadwal harian.';}
+    if(!data?.enabled || stale) label.style.color='';
+  } catch(e) {label.textContent='Status backup otomatis belum dapat diperiksa.';label.style.color='';detail.textContent='Periksa koneksi lalu klik Periksa status.';guide.hidden=false;guide.open=false;}
+}
+
 async function backupDriveManual() {
   const btn=document.getElementById('btnBackupDrive'), status=document.getElementById('backupDriveStatus');
   btn.disabled=true; status.textContent='Mengambil data dari Supabase…';
@@ -5600,6 +5659,114 @@ async function backupDriveManual() {
   } catch(e) {status.textContent='Backup gagal: '+e.message;}
   finally {btn.disabled=false;}
 }
+
+</script>
+<script>
+const SCAN_ENGINE_VERSION='2.2.1';
+let scanEnginePromise, scanDecodeQueue=Promise.resolve(), bolangActiveScanner;
+function loadBolangScanEngine() {
+  if(scanEnginePromise) return scanEnginePromise;
+  scanEnginePromise=(async()=>{
+    if(!window.ZXingWASM) await new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src='https://cdn.jsdelivr.net/npm/zxing-wasm@'+SCAN_ENGINE_VERSION+'/dist/iife/reader/index.js';
+      script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error('Mesin scanner gagal dimuat. Periksa koneksi lalu coba lagi.'));};document.head.appendChild(script);
+    });
+    const engine=window.ZXingWASM;
+    if(!engine?.readBarcodes) throw new Error('Mesin scanner tidak tersedia.');
+    await engine.prepareZXingModule({overrides:{locateFile:path=>'https://cdn.jsdelivr.net/npm/zxing-wasm@'+SCAN_ENGINE_VERSION+'/dist/reader/'+path},fireImmediately:true});
+    return engine;
+  })().catch(e=>{scanEnginePromise=null;throw e;});
+  return scanEnginePromise;
+}
+function decodeBolangFrame(input,mode) {
+  const options={tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8};
+  if(mode==='barcode') options.formats=['Code128','Code39','Code93','Codabar','ITF','EAN13','EAN8','UPCA','UPCE'];
+  if(mode==='qr') options.formats=['QRCode'];
+  const job=scanDecodeQueue.then(async()=>{const engine=await loadBolangScanEngine();return engine.readBarcodes(input,options);});
+  scanDecodeQueue=job.catch(()=>{});return job;
+}
+class BolangBarcodeScanner {
+  constructor(id) {this.root=document.getElementById(id);this.id=id;this.closed=true;this.generation=0;}
+  render(onResult) {
+    if(bolangActiveScanner && bolangActiveScanner!==this) {
+      const previous=bolangActiveScanner;previous.clear();
+      previous.root.style.display='none';
+      const closeMap={reader:'btnCloseScanner',readerDokMain:'btnCloseScannerDokMain',readerDokumen:'btnCloseScannerDokumen'};
+      const close=document.getElementById(closeMap[previous.id]);if(close) close.style.display='none';
+      document.querySelectorAll('.open-scanner-btn,.open-scanner-btn-dokumen').forEach(b=>b.style.display='flex');
+      isScanning=false;isScanningDokMain=false;isScanningDokumen=false;
+    }
+    bolangActiveScanner=this;this.closed=false;this.onResult=onResult;this.mode='barcode';this.paused=false;this.stream=null;this.lastAccepted='';this.lastAcceptedAt=0;
+    this.root.innerHTML=`<div class="bolang-scan"><div class="scan-toolbar"><label>Mode <select class="scan-mode"><option value="barcode">Barcode resi</option><option value="qr">QR Code</option><option value="auto">Barcode + QR</option></select></label><button type="button" class="btn btn-ghost scan-camera">Aktifkan kamera</button><label class="btn btn-ghost">Scan dari foto<input class="scan-file" type="file" accept="image/*" style="display:none"></label></div><div class="scan-preview"><video autoplay muted playsinline></video><div class="scan-guide" aria-hidden="true"></div></div><div class="scan-controls"><label class="scan-zoom" hidden>Zoom <input type="range" aria-label="Zoom kamera"></label><button type="button" class="btn btn-ghost scan-torch" hidden>Lampu: mati</button></div><p class="scan-message" role="status" aria-live="polite">Posisikan seluruh barcode di dalam layar, hindari pantulan cahaya.</p><div class="scan-choices"></div><p style="font-size:12px;margin:6px 0">Jika sulit terbaca, mundurkan kamera sedikit atau pilih foto yang lebih tajam.</p></div>`;
+    this.video=this.root.querySelector('video');this.message=this.root.querySelector('.scan-message');this.choices=this.root.querySelector('.scan-choices');this.canvas=document.createElement('canvas');
+    this.root.querySelector('.scan-mode').onchange=e=>{this.mode=e.target.value;this.candidate='';this.root.querySelector('.scan-guide').classList.toggle('qr',this.mode==='qr');};
+    this.root.querySelector('.scan-camera').onclick=()=>this.startCamera();
+    this.root.querySelector('.scan-file').onchange=e=>{const file=e.target.files[0];e.target.value='';if(file)this.scanPhoto(file);};
+    this.startCamera();
+  }
+  say(text) {if(!this.closed)this.message.textContent=text;}
+  async startCamera() {
+    if(this.starting || this.closed) return;
+    this.starting=true;this.paused=false;this.choices.replaceChildren();const generation=++this.generation;this.stopTracks();
+    const btn=this.root.querySelector('.scan-camera');btn.disabled=true;this.say('Mengaktifkan kamera belakang…');
+    try {
+      if(!navigator.mediaDevices?.getUserMedia) throw new Error('Kamera tidak tersedia. Buka halaman HTTPS di Safari atau Chrome, atau gunakan Scan dari foto.');
+      let stream;
+      try {stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});}
+      catch(e) {if(e.name!=='OverconstrainedError')throw e;stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'environment'}});}
+      if(this.closed || generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
+      this.stream=stream;this.video.srcObject=stream;await this.video.play();
+      if(this.closed || generation!==this.generation)return;
+      this.configureControls();this.say('Memuat scanner…');await loadBolangScanEngine();
+      if(this.closed || generation!==this.generation)return;
+      this.say('Arahkan seluruh barcode ke kamera.');this.loop(generation);
+    } catch(e) {
+      if(generation===this.generation){this.stopTracks();this.say(e.name==='NotAllowedError'?'Izin kamera ditolak. Izinkan kamera di pengaturan browser, atau pilih Scan dari foto.':e.message||'Kamera tidak dapat dibuka. Gunakan Scan dari foto.');}
+    } finally {this.starting=false;if(!this.closed)btn.disabled=false;}
+  }
+  configureControls() {
+    const track=this.stream?.getVideoTracks()[0];const caps=track?.getCapabilities?.()||{};const settings=track?.getSettings?.()||{};
+    const zoom=this.root.querySelector('.scan-zoom'),torch=this.root.querySelector('.scan-torch');zoom.hidden=true;torch.hidden=true;this.torchOn=false;
+    if(caps.focusMode?.includes('continuous')) track.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+    if(caps.zoom && caps.zoom.max>caps.zoom.min){zoom.hidden=false;const input=zoom.querySelector('input');input.min=caps.zoom.min;input.max=caps.zoom.max;input.step=caps.zoom.step||0.1;input.value=settings.zoom||caps.zoom.min;input.onchange=()=>track.applyConstraints({advanced:[{zoom:Number(input.value)}]}).catch(()=>this.say('Zoom tidak dapat diubah pada kamera ini.'));}
+    if(caps.torch){torch.hidden=false;torch.onclick=async()=>{try{await track.applyConstraints({advanced:[{torch:!this.torchOn}]});this.torchOn=!this.torchOn;torch.textContent='Lampu: '+(this.torchOn?'nyala':'mati');}catch(e){this.say('Lampu tidak tersedia pada kamera ini.');}};}
+  }
+  async loop(generation) {
+    if(this.closed || generation!==this.generation) return;
+    try {
+      if(!this.paused && !document.hidden && this.video.readyState>=2 && this.video.videoWidth) {
+        const width=Math.min(this.video.videoWidth,1600);this.canvas.width=width;this.canvas.height=Math.round(this.video.videoHeight*width/this.video.videoWidth);
+        const ctx=this.canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(this.video,0,0,this.canvas.width,this.canvas.height);
+        const results=await decodeBolangFrame(ctx.getImageData(0,0,this.canvas.width,this.canvas.height),this.mode);
+        if(this.closed || generation!==this.generation)return;
+        const texts=[...new Set(results.filter(r=>r.isValid!==false && r.text).map(r=>r.text.trim()).filter(Boolean))];
+        if(texts.length>1) this.chooseResult(texts);
+        else if(texts.length===1){const text=texts[0];this.hits=this.candidate===text?(this.hits||0)+1:1;this.candidate=text;if(this.hits>=2)this.accept(text);}
+        else {this.candidate='';this.hits=0;}
+      }
+    }catch(e){this.say('Pembacaan gagal. Coba Scan dari foto atau aktifkan kamera kembali.');}
+    if(!this.closed && generation===this.generation)this.timer=setTimeout(()=>this.loop(generation),180);
+  }
+  accept(text) {
+    if(this.closed || (text===this.lastAccepted && Date.now()-this.lastAcceptedAt<2500))return;
+    this.lastAccepted=text;this.lastAcceptedAt=Date.now();this.say('Terbaca: '+text);navigator.vibrate?.(60);this.onResult(text);
+  }
+  chooseResult(texts) {
+    this.paused=true;this.choices.replaceChildren();this.say('Ada beberapa kode. Pilih nomor resi yang benar:');
+    for(const text of texts){const button=document.createElement('button');button.type='button';button.className='btn btn-ghost';button.textContent=text;button.onclick=()=>{this.choices.replaceChildren();this.paused=false;this.accept(text);};this.choices.appendChild(button);}
+    const resume=document.createElement('button');resume.type='button';resume.className='btn btn-ghost';resume.textContent='Scan ulang';resume.onclick=()=>{this.paused=false;this.choices.replaceChildren();this.say('Arahkan satu barcode ke kamera.');};this.choices.appendChild(resume);
+  }
+  async scanPhoto(file) {
+    const generation=++this.generation;this.stopTracks();this.paused=true;this.choices.replaceChildren();this.say('Membaca foto…');
+    try {const results=await decodeBolangFrame(file,this.mode);if(this.closed || generation!==this.generation)return;const texts=[...new Set(results.filter(r=>r.isValid!==false && r.text).map(r=>r.text.trim()).filter(Boolean))];if(texts.length===1)this.accept(texts[0]);else if(texts.length>1)this.chooseResult(texts);else this.say('Kode belum terbaca. Pilih mode Barcode + QR, gunakan foto tajam, atau aktifkan kamera kembali.');}
+    catch(e){if(generation===this.generation)this.say('Foto belum dapat dibaca. Gunakan JPG/PNG yang jelas. '+(e.message||''));}
+  }
+  stopTracks() {clearTimeout(this.timer);this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(this.video){this.video.pause();this.video.srcObject=null;}}
+  clear() {this.closed=true;this.generation++;this.stopTracks();if(bolangActiveScanner===this)bolangActiveScanner=null;this.root.replaceChildren();return Promise.resolve();}
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden && bolangActiveScanner){const id=bolangActiveScanner.id;if(id==='reader')tutupScanner();else if(id==='readerDokMain')tutupScannerDokMain();else tutupScannerDokumen();}});
+window.addEventListener('pagehide',()=>bolangActiveScanner?.clear());
 
 </script>
 </body>
