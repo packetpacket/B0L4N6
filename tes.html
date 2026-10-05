@@ -5558,7 +5558,7 @@ async function backupDriveManual() {
     for(const name of BOLANG_BACKUP_TABLES) {
       tables[name]=[];
       for(let start=0;;start+=500) {
-        const {data,error}=await supabaseDb.from(name).select('*').order('id').range(start,start+499);
+        const {data,error}=await supabaseDb.from(name).select('*').order(name === 'kontak_pengambil' ? 'nama' : 'id').range(start,start+499);
         if(error) throw new Error('Gagal mengambil '+name+': '+error.message);
         if(!Array.isArray(data)) throw new Error('Respons tidak valid: '+name);
         tables[name].push(...data); if(data.length<500) break;
