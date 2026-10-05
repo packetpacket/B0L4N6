@@ -1247,7 +1247,7 @@
       .ai-panel { right:16px; bottom:150px; height:min(500px,calc(100vh - 178px)); }
     }
   </style>
-</head>
+<style>.bolang-scan{border:1px solid #cbd5e1;border-radius:12px;padding:12px;text-align:left}.scan-toolbar,.scan-controls,.scan-choices{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.scan-preview{position:relative;background:#111;border-radius:10px;overflow:hidden;margin:10px 0}.scan-preview video{display:block;width:100%;max-height:340px;object-fit:contain}.scan-guide{position:absolute;pointer-events:none;left:5%;top:25%;width:90%;height:50%;border:2px solid #4ade80;border-radius:8px}.scan-message{font-size:14px;overflow-wrap:anywhere}.scan-controls [hidden]{display:none!important}.scan-choices button{max-width:100%;overflow-wrap:anywhere;white-space:normal}</style></head>
 <body>
 
 <!-- ============================================================
@@ -2175,7 +2175,7 @@
     document.getElementById('readerDokMain').style.display          = 'block';
     document.getElementById('btnCloseScannerDokMain').style.display = 'block';
     if (!isScanningDokMain) {
-      scannerDokMain = new Html5QrcodeScanner('readerDokMain', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scannerDokMain = new BolangBarcodeScanner('readerDokMain', { fps: 10, qrbox: { width: 250, height: 150 } });
       scannerDokMain.render(text => {
         document.getElementById('dokMainResi').value = text;
         tutupScannerDokMain();
@@ -3294,7 +3294,7 @@
     document.getElementById('reader').style.display          = 'block';
     document.getElementById('btnCloseScanner').style.display = 'block';
     if (!isScanning) {
-      scanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scanner = new BolangBarcodeScanner('reader', { fps: 10, qrbox: { width: 250, height: 150 } });
       scanner.render(text => {
         if (target === 'masuk') {
           document.getElementById('resi').value = text;
@@ -4214,7 +4214,7 @@
     document.getElementById('readerDokumen').style.display          = 'block';
     document.getElementById('btnCloseScannerDokumen').style.display = 'block';
     if (!isScanningDokumen) {
-      scannerDokumen = new Html5QrcodeScanner('readerDokumen', { fps: 10, qrbox: { width: 250, height: 150 } });
+      scannerDokumen = new BolangBarcodeScanner('readerDokumen', { fps: 10, qrbox: { width: 250, height: 150 } });
       scannerDokumen.render(text => {
         document.getElementById('dokResi').value = text;
         tutupScannerDokumen();
@@ -5659,6 +5659,113 @@ async function backupDriveManual() {
   } catch(e) {status.textContent='Backup gagal: '+e.message;}
   finally {btn.disabled=false;}
 }
+
+</script>
+<script>
+const SCAN_ENGINE_VERSION='2.2.1';
+let scanEnginePromise, scanDecodeQueue=Promise.resolve(), bolangActiveScanner;
+function loadBolangScanEngine() {
+  if(scanEnginePromise) return scanEnginePromise;
+  scanEnginePromise=(async()=>{
+    if(!window.ZXingWASM) await new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src='https://cdn.jsdelivr.net/npm/zxing-wasm@'+SCAN_ENGINE_VERSION+'/dist/iife/reader/index.js';
+      script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error('Mesin scanner gagal dimuat. Periksa koneksi lalu coba lagi.'));};document.head.appendChild(script);
+    });
+    const engine=window.ZXingWASM;
+    if(!engine?.readBarcodes) throw new Error('Mesin scanner tidak tersedia.');
+    await engine.prepareZXingModule({overrides:{locateFile:path=>'https://cdn.jsdelivr.net/npm/zxing-wasm@'+SCAN_ENGINE_VERSION+'/dist/reader/'+path},fireImmediately:true});
+    return engine;
+  })().catch(e=>{scanEnginePromise=null;throw e;});
+  return scanEnginePromise;
+}
+function decodeBolangFrame(input,mode) {
+  const options={tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8};
+  if(mode==='barcode') options.formats=['Code128','Code39','Code93','Codabar','ITF','EAN13','EAN8','UPCA','UPCE'];
+  if(mode==='qr') options.formats=['QRCode'];
+  const job=scanDecodeQueue.then(async()=>{const engine=await loadBolangScanEngine();return engine.readBarcodes(input,options);});
+  scanDecodeQueue=job.catch(()=>{});return job;
+}
+class BolangBarcodeScanner {
+  constructor(id) {this.root=document.getElementById(id);this.id=id;this.closed=true;this.generation=0;}
+  render(onResult) {
+    if(bolangActiveScanner && bolangActiveScanner!==this) {
+      const previous=bolangActiveScanner;previous.clear();
+      previous.root.style.display='none';
+      const closeMap={reader:'btnCloseScanner',readerDokMain:'btnCloseScannerDokMain',readerDokumen:'btnCloseScannerDokumen'};
+      const close=document.getElementById(closeMap[previous.id]);if(close) close.style.display='none';
+      document.querySelectorAll('.open-scanner-btn,.open-scanner-btn-dokumen').forEach(b=>b.style.display='flex');
+      isScanning=false;isScanningDokMain=false;isScanningDokumen=false;
+    }
+    bolangActiveScanner=this;this.closed=false;this.onResult=onResult;this.mode='auto';this.paused=false;this.stream=null;this.lastAccepted='';this.lastAcceptedAt=0;
+    this.root.innerHTML=`<div class="bolang-scan"><div class="scan-toolbar"><button type="button" class="btn btn-ghost scan-camera">Aktifkan kamera</button><label class="btn btn-ghost">Scan dari foto<input class="scan-file" type="file" accept="image/*" style="display:none"></label></div><div class="scan-preview"><video autoplay muted playsinline></video><div class="scan-guide" aria-hidden="true"></div></div><div class="scan-controls"><label class="scan-zoom" hidden>Zoom <input type="range" aria-label="Zoom kamera"></label><button type="button" class="btn btn-ghost scan-torch" hidden>Lampu: mati</button></div><p class="scan-message" role="status" aria-live="polite">Posisikan seluruh barcode di dalam layar, hindari pantulan cahaya.</p><div class="scan-choices"></div><p style="font-size:12px;margin:6px 0">Jika sulit terbaca, mundurkan kamera sedikit atau pilih foto yang lebih tajam.</p></div>`;
+    this.video=this.root.querySelector('video');this.message=this.root.querySelector('.scan-message');this.choices=this.root.querySelector('.scan-choices');this.canvas=document.createElement('canvas');
+    this.root.querySelector('.scan-camera').onclick=()=>this.startCamera();
+    this.root.querySelector('.scan-file').onchange=e=>{const file=e.target.files[0];e.target.value='';if(file)this.scanPhoto(file);};
+    this.startCamera();
+  }
+  say(text) {if(!this.closed)this.message.textContent=text;}
+  async startCamera() {
+    if(this.starting || this.closed) return;
+    this.starting=true;this.paused=false;this.choices.replaceChildren();const generation=++this.generation;this.stopTracks();
+    const btn=this.root.querySelector('.scan-camera');btn.disabled=true;this.say('Mengaktifkan kamera belakang…');
+    try {
+      if(!navigator.mediaDevices?.getUserMedia) throw new Error('Kamera tidak tersedia. Buka halaman HTTPS di Safari atau Chrome, atau gunakan Scan dari foto.');
+      let stream;
+      try {stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});}
+      catch(e) {if(e.name!=='OverconstrainedError')throw e;stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'environment'}});}
+      if(this.closed || generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
+      this.stream=stream;this.video.srcObject=stream;await this.video.play();
+      if(this.closed || generation!==this.generation)return;
+      this.configureControls();this.say('Memuat scanner…');await loadBolangScanEngine();
+      if(this.closed || generation!==this.generation)return;
+      this.say('Arahkan seluruh barcode ke kamera.');this.loop(generation);
+    } catch(e) {
+      if(generation===this.generation){this.stopTracks();this.say(e.name==='NotAllowedError'?'Izin kamera ditolak. Izinkan kamera di pengaturan browser, atau pilih Scan dari foto.':e.message||'Kamera tidak dapat dibuka. Gunakan Scan dari foto.');}
+    } finally {this.starting=false;if(!this.closed)btn.disabled=false;}
+  }
+  configureControls() {
+    const track=this.stream?.getVideoTracks()[0];const caps=track?.getCapabilities?.()||{};const settings=track?.getSettings?.()||{};
+    const zoom=this.root.querySelector('.scan-zoom'),torch=this.root.querySelector('.scan-torch');zoom.hidden=true;torch.hidden=true;this.torchOn=false;
+    if(caps.focusMode?.includes('continuous')) track.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+    if(caps.zoom && caps.zoom.max>caps.zoom.min){zoom.hidden=false;const input=zoom.querySelector('input');input.min=caps.zoom.min;input.max=caps.zoom.max;input.step=caps.zoom.step||0.1;input.value=settings.zoom||caps.zoom.min;input.onchange=()=>track.applyConstraints({advanced:[{zoom:Number(input.value)}]}).catch(()=>this.say('Zoom tidak dapat diubah pada kamera ini.'));}
+    if(caps.torch){torch.hidden=false;torch.onclick=async()=>{try{await track.applyConstraints({advanced:[{torch:!this.torchOn}]});this.torchOn=!this.torchOn;torch.textContent='Lampu: '+(this.torchOn?'nyala':'mati');}catch(e){this.say('Lampu tidak tersedia pada kamera ini.');}};}
+  }
+  async loop(generation) {
+    if(this.closed || generation!==this.generation) return;
+    try {
+      if(!this.paused && !document.hidden && this.video.readyState>=2 && this.video.videoWidth) {
+        const width=Math.min(this.video.videoWidth,1600);this.canvas.width=width;this.canvas.height=Math.round(this.video.videoHeight*width/this.video.videoWidth);
+        const ctx=this.canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(this.video,0,0,this.canvas.width,this.canvas.height);
+        const results=await decodeBolangFrame(ctx.getImageData(0,0,this.canvas.width,this.canvas.height),this.mode);
+        if(this.closed || generation!==this.generation)return;
+        const texts=[...new Set(results.filter(r=>r.isValid!==false && r.text).map(r=>r.text.trim()).filter(Boolean))];
+        if(texts.length>1) this.chooseResult(texts);
+        else if(texts.length===1){const text=texts[0];this.hits=this.candidate===text?(this.hits||0)+1:1;this.candidate=text;if(this.hits>=2)this.accept(text);}
+        else {this.candidate='';this.hits=0;}
+      }
+    }catch(e){this.say('Pembacaan gagal. Coba Scan dari foto atau aktifkan kamera kembali.');}
+    if(!this.closed && generation===this.generation)this.timer=setTimeout(()=>this.loop(generation),180);
+  }
+  accept(text) {
+    if(this.closed || (text===this.lastAccepted && Date.now()-this.lastAcceptedAt<2500))return;
+    this.lastAccepted=text;this.lastAcceptedAt=Date.now();this.say('Terbaca: '+text);navigator.vibrate?.(60);this.onResult(text);
+  }
+  chooseResult(texts) {
+    this.paused=true;this.choices.replaceChildren();this.say('Ada beberapa kode. Pilih nomor resi yang benar:');
+    for(const text of texts){const button=document.createElement('button');button.type='button';button.className='btn btn-ghost';button.textContent=text;button.onclick=()=>{this.choices.replaceChildren();this.paused=false;this.accept(text);};this.choices.appendChild(button);}
+    const resume=document.createElement('button');resume.type='button';resume.className='btn btn-ghost';resume.textContent='Scan ulang';resume.onclick=()=>{this.paused=false;this.choices.replaceChildren();this.say('Arahkan satu barcode ke kamera.');};this.choices.appendChild(resume);
+  }
+  async scanPhoto(file) {
+    const generation=++this.generation;this.stopTracks();this.paused=true;this.choices.replaceChildren();this.say('Membaca foto…');
+    try {const results=await decodeBolangFrame(file,this.mode);if(this.closed || generation!==this.generation)return;const texts=[...new Set(results.filter(r=>r.isValid!==false && r.text).map(r=>r.text.trim()).filter(Boolean))];if(texts.length===1)this.accept(texts[0]);else if(texts.length>1)this.chooseResult(texts);else this.say('Kode belum terbaca. Gunakan foto yang lebih tajam atau aktifkan kamera kembali.');}
+    catch(e){if(generation===this.generation)this.say('Foto belum dapat dibaca. Gunakan JPG/PNG yang jelas. '+(e.message||''));}
+  }
+  stopTracks() {clearTimeout(this.timer);this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(this.video){this.video.pause();this.video.srcObject=null;}}
+  clear() {this.closed=true;this.generation++;this.stopTracks();if(bolangActiveScanner===this)bolangActiveScanner=null;this.root.replaceChildren();return Promise.resolve();}
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden && bolangActiveScanner){const id=bolangActiveScanner.id;if(id==='reader')tutupScanner();else if(id==='readerDokMain')tutupScannerDokMain();else tutupScannerDokumen();}});
+window.addEventListener('pagehide',()=>bolangActiveScanner?.clear());
 
 </script>
 </body>
