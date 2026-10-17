@@ -3212,20 +3212,15 @@
   }
 
   async function hapusData(jenis, num) {
+    if (!(await peringatanBackupSebelumHapus(jenis))) return;
     if (!confirm('Hapus data ini?')) return;
-    try {
-      const res = await fetch(`${SCRIPT_URL}?action=delete&type=${jenis}&row=${num}&email=${encodeURIComponent(userEmailAktif)}`);
-      const result = await res.text();
-      if (/^Error:/i.test(result)) throw new Error(result.replace(/^Error:\s*/i,''));
-      await muatSemuaData();
-    } catch (e) {
-      alert('Data tidak dihapus: ' + (e.message || e));
-    }
+    fetch(`${SCRIPT_URL}?action=delete&type=${jenis}&row=${num}&email=${encodeURIComponent(userEmailAktif)}`, { mode: 'no-cors' })
+      .then(() => muatSemuaData());
   }
 
   async function handleDeleteAll() {
     const f = filterMode;
-    if (!(await periksaEksporSebelumHapus(f))) return;
+    if (!(await peringatanBackupSebelumHapus(f))) return;
     const namaTarget = f === 'semua' ? 'PAKET MASUK DAN PAKET KELUAR' : (f === 'masuk' ? 'PAKET MASUK' : 'PAKET KELUAR');
     const pin = prompt(`⚠️ Hapus SEMUA ${namaTarget}?\nMasukkan PIN penghapusan:`);
     if (pin === null) return alert('Penghapusan dibatalkan.');
@@ -3684,14 +3679,6 @@
       // Download
       const filename = `Paket_${new Date().toISOString().slice(0,10)}.xlsx`;
       XLSX.writeFile(wb, filename);
-
-      // Hanya export lengkap (tanpa pencarian) yang membuka izin hapus.
-      // Penghapusan tetap dilakukan manual lewat tombol Hapus.
-      if (!q) {
-        catatEksporManual(filterMode);
-      } else {
-        alert('File hasil pencarian sudah diexport, tetapi penghapusan masih dikunci.\n\nKosongkan kotak pencarian lalu Export Excel lagi agar seluruh data tersimpan sebelum dihapus.');
-      }
 
       setTimeout(() => {
         btn.disabled = false;
@@ -5353,7 +5340,6 @@ async function adapterSupabase(url, options) {
     }
     if (action === 'delete') {
       const map = {masuk:'paket_masuk',keluar:'paket_keluar',dokumen:'dokumen'}; const table = map[get('type')];
-      if (!table) throw new Error('Jenis data tidak dikenali.');
       const record = await idPadaBaris(table,get('row')); if (!record) throw new Error('Data tidak ditemukan. Silakan refresh halaman.');
       const {error} = await supabaseDb.from(table).delete().eq('id',record.id); sbError(error);
       await catatAktivitas('Hapus',get('type') === 'masuk' ? 'Paket Masuk' : get('type') === 'keluar' ? 'Paket Keluar' : 'Dokumen','ID: '+record.id);
@@ -5367,7 +5353,6 @@ async function adapterSupabase(url, options) {
       const map = {masuk:'paket_masuk',keluar:'paket_keluar'};
       const target = targetType === 'semua' ? ['masuk','keluar'] : [targetType];
       if (!target.every(x=>map[x])) throw new Error('Jenis data tidak dikenali.');
-      await pastikanSudahDiekspor(targetType);
       for (const jenis of target) {
         const {error} = await supabaseDb.from(map[jenis]).delete().not('id','is',null); sbError(error);
         await catatAktivitas('Hapus Massal',jenis === 'masuk' ? 'Paket Masuk' : 'Paket Keluar','Seluruh data dihapus');
@@ -5583,45 +5568,36 @@ function unduhScriptBackup() {
 function tanggalWitaBackup(t) {
   return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Makassar',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t));
 }
-function catatEksporManual(target) {
-  const waktu=new Date().toISOString();
-  const jenis=target==='semua'?['masuk','keluar']:[target];
-  jenis.forEach(x=>sessionStorage.setItem('bolang_export_'+x,waktu));
+function pesanPeringatanBackup(status, latest, now=new Date()) {
+  if(!status || !status.last_success) return 'Data belum di-backup otomatis. Belum ada backup otomatis yang berhasil tercatat.';
+  if(status.last_result==='error') return 'Backup otomatis terakhir gagal. Data terbaru mungkin belum tersimpan.';
+  if(tanggalWitaBackup(status.last_success)!==tanggalWitaBackup(now)) return 'Data hari ini belum di-backup otomatis. Jadwal backup sekitar pukul 23.00–24.00 WITA.';
+  if(latest && new Date(latest)>new Date(status.last_success)) return 'Ada data baru atau perubahan setelah backup otomatis terakhir. Data terbaru belum di-backup otomatis.';
+  return '';
 }
-async function statusKelayakanHapus(target) {
-  if(!supabaseDb) throw new Error('Belum terhubung ke database.');
-  const jenis=target==='semua'?['masuk','keluar']:[target];
-  const map={masuk:{table:'paket_masuk',label:'Paket Masuk'},keluar:{table:'paket_keluar',label:'Paket Keluar'}};
-  for(const key of jenis) {
-    if(!map[key]) return {boleh:false,message:'Jenis data tidak dikenali.'};
-    const info=map[key];
-    const [{data:rows,error:rowError},{data:logs,error:logError}]=await Promise.all([
-      supabaseDb.from(info.table).select('created_at').order('created_at',{ascending:false}).limit(1),
-      supabaseDb.from('log_aktivitas').select('created_at').eq('jenis_data',info.label).eq('aksi','Edit').order('created_at',{ascending:false}).limit(1)
-    ]);
-    if(rowError) throw rowError;
-    if(logError) throw logError;
-    const latest=[rows?.[0]?.created_at,logs?.[0]?.created_at].filter(Boolean).sort((a,b)=>new Date(b)-new Date(a))[0] || null;
-    const exportedAt=sessionStorage.getItem('bolang_export_'+key);
-    if(latest && (!exportedAt || new Date(exportedAt)<new Date(latest))) {
-      return {boleh:false,message:info.label+' belum diexport lengkap setelah data/perubahan terbaru.'};
-    }
-  }
-  return {boleh:true,message:''};
-}
-async function pastikanSudahDiekspor(target) {
-  const hasil=await statusKelayakanHapus(target);
-  if(!hasil.boleh) throw new Error(hasil.message+' Data tidak dihapus.');
-}
-async function periksaEksporSebelumHapus(target) {
+async function peringatanBackupSebelumHapus(target) {
+  let message='';
   try {
-    const hasil=await statusKelayakanHapus(target);
-    if(hasil.boleh) return true;
-    alert('⛔ Penghapusan ditolak\n\n'+hasil.message+'\n\nKosongkan pencarian, klik “Export Excel”, pastikan file tersimpan di PC, lalu coba hapus kembali.');
-  } catch(e) {
-    alert('⛔ Penghapusan ditolak\n\nStatus export tidak dapat dipastikan. Demi keamanan, data tidak dihapus.\n\nDetail: '+(e.message||e));
-  }
-  return false;
+    if(!supabaseDb) throw new Error('Belum terhubung');
+    const {data:status,error}=await supabaseDb.from('bolang_backup_status').select('last_success,last_result').eq('id',1).maybeSingle();
+    if(error) throw error;
+    message=pesanPeringatanBackup(status,null);
+    if(!message) {
+      const tables=target==='masuk'?['paket_masuk']:target==='keluar'?['paket_keluar']:['paket_masuk','paket_keluar'];
+      const checks=await Promise.all(tables.map(async table=>{
+        const {data,error}=await supabaseDb.from(table).select('created_at').order('created_at',{ascending:false}).limit(1);
+        if(error) throw error;return data?.[0]?.created_at;
+      }));
+      const kinds=target==='masuk'?['Paket Masuk']:target==='keluar'?['Paket Keluar']:['Paket Masuk','Paket Keluar'];
+      const {data:logs,error:logError}=await supabaseDb.from('log_aktivitas').select('created_at').in('jenis_data',kinds).eq('aksi','Edit').order('created_at',{ascending:false}).limit(1);
+      if(logError) throw logError;
+      checks.push(logs?.[0]?.created_at);
+      const latest=checks.filter(Boolean).sort((a,b)=>new Date(b)-new Date(a))[0];
+      message=pesanPeringatanBackup(status,latest);
+    }
+  } catch(e) {message='Status backup otomatis belum dapat dipastikan. Data yang akan dihapus mungkin belum di-backup.';}
+  if(!message) return true;
+  return confirm('⚠️ '+message+'\n\nSebaiknya lakukan Backup sekarang dan pastikan file Excel tersimpan di Drive sebelum menghapus.\n\nTetap lanjutkan penghapusan?');
 }
 
 async function cekStatusBackupOtomatis() {
@@ -5679,13 +5655,7 @@ async function backupDriveManual() {
     const upload=await fetch(location,{method:'PUT',headers:{'Content-Type':mime},body:excel});
     if(!upload.ok) throw new Error('Unggah backup gagal (HTTP '+upload.status+').');
     const file=await upload.json(); if(!file.id) throw new Error('Drive tidak memberikan ID backup.');
-    const waktuBackup=new Date().toISOString();
-    const {error:statusError}=await supabaseDb.from('bolang_backup_status').upsert({
-      id:1,last_success:waktuBackup,last_result:'success',reported_at:waktuBackup
-    });
-    if(statusError) throw new Error('File tersimpan, tetapi status backup gagal dicatat: '+statusError.message);
     status.textContent='Backup manual berhasil: '+name;
-    cekStatusBackupOtomatis();
   } catch(e) {status.textContent='Backup gagal: '+e.message;}
   finally {btn.disabled=false;}
 }
