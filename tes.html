@@ -5596,14 +5596,14 @@ async function catatEksporManual(target) {
 }
 function syaratBackupMalam(backup, now=new Date()) {
   const wita=new Date(now.getTime()+8*60*60*1000);
-  if(wita.getUTCHours()>=12) return 'Hapus massal hanya dibuka pukul 00.00–11.59 WITA. Tunggu backup otomatis malam ini sekitar 23.00–24.00 WITA berhasil, lalu Export Excel kembali sebelum menghapus besok pagi.';
+  if(wita.getUTCHours()>=12) return 'Hapus massal hanya dibuka pukul 00.00–11.59 WITA setelah backup malam berhasil. Jika data tidak berubah setelah Export Excel, file yang diekspor malam ini dapat dipakai besok pagi.';
   const awalHari=Date.UTC(wita.getUTCFullYear(),wita.getUTCMonth(),wita.getUTCDate())-8*60*60*1000;
   const batasBackup=awalHari-60*60*1000;
   const waktu=new Date(backup?.last_success).getTime();
   if(!Number.isFinite(waktu) || waktu<batasBackup || waktu>now.getTime())
-    return 'Backup malam terakhir belum berhasil tercatat (mulai pukul 23.00 WITA tadi malam). Penghapusan masih dikunci. Periksa backup otomatis; setelah berhasil, lakukan Export Excel kembali.';
+    return 'Backup malam terakhir belum berhasil tercatat (mulai pukul 23.00 WITA tadi malam). Penghapusan masih dikunci. Ekspor sebelum backup tetap berlaku jika tidak ada data baru atau edit setelah ekspor.';
   if(backup.last_result==='error')
-    return 'Percobaan backup terakhir gagal. Pastikan backup berhasil, kemudian Export Excel kembali sebelum menghapus.';
+    return 'Percobaan backup terakhir gagal. Pastikan backup berhasil sebelum menghapus; ekspor hanya perlu diulang bila data berubah setelah ekspor.';
   return '';
 }
 async function statusKelayakanHapus(target) {
@@ -5614,6 +5614,9 @@ async function statusKelayakanHapus(target) {
   const pesanBackup=syaratBackupMalam(backup);
   if(pesanBackup) return {boleh:false,message:pesanBackup};
   const backupAt=new Date(backup.last_success);
+  const wita=new Date(Date.now()+8*60*60*1000);
+  const awalHari=Date.UTC(wita.getUTCFullYear(),wita.getUTCMonth(),wita.getUTCDate())-8*60*60*1000;
+  const awalSiklus=awalHari-12*60*60*1000; // pukul 12.00 WITA sehari sebelumnya
   const jenis=target==='semua'?['masuk','keluar']:[target];
   const map={masuk:{table:'paket_masuk',label:'Paket Masuk'},keluar:{table:'paket_keluar',label:'Paket Keluar'}};
   for(const key of jenis) {
@@ -5631,8 +5634,8 @@ async function statusKelayakanHapus(target) {
     if(latest && new Date(latest)>backupAt)
       return {boleh:false,message:info.label+' memiliki data/perubahan setelah backup terakhir. Backup ulang data terbaru terlebih dahulu, kemudian Export Excel kembali sebelum menghapus.'};
     const exportedAt=exports?.[0]?.created_at ? new Date(exports[0].created_at) : null;
-    if(!exportedAt || exportedAt<backupAt || (latest && exportedAt<new Date(latest)))
-      return {boleh:false,message:'Backup sudah memenuhi syarat, tetapi '+info.label+' belum diexport lengkap sesudah backup tersebut. Kosongkan pencarian, pilih jenis data yang sesuai, lalu klik “Export Excel”. Setelah file tersimpan, hapus massal dapat dicoba dari PC atau HP.'};
+    if(!exportedAt || exportedAt.getTime()<awalSiklus || (latest && exportedAt<new Date(latest)))
+      return {boleh:false,message:'Backup malam sudah memenuhi syarat, tetapi '+info.label+' belum diexport lengkap pada siklus ini atau data berubah setelah ekspor. Kosongkan pencarian, pilih jenis data yang sesuai, lalu klik “Export Excel”. Setelah file tersimpan, hapus massal dapat dicoba dari PC atau HP.'};
   }
   return {boleh:true,message:''};
 }
