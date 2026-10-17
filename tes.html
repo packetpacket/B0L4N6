@@ -3688,7 +3688,7 @@
       // Hanya export lengkap (tanpa pencarian) yang membuka izin hapus.
       // Penghapusan tetap dilakukan manual lewat tombol Hapus.
       if (!q) {
-        catatEksporManual(filterMode);
+        await catatEksporManual(filterMode);
       } else {
         alert('File hasil pencarian sudah diexport, tetapi penghapusan masih dikunci.\n\nKosongkan kotak pencarian lalu Export Excel lagi agar seluruh data tersimpan sebelum dihapus.');
       }
@@ -5583,29 +5583,44 @@ function unduhScriptBackup() {
 function tanggalWitaBackup(t) {
   return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Makassar',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t));
 }
-function catatEksporManual(target) {
-  const waktu=new Date().toISOString();
+async function catatEksporManual(target) {
   const jenis=target==='semua'?['masuk','keluar']:[target];
-  jenis.forEach(x=>sessionStorage.setItem('bolang_export_'+x,waktu));
+  const map={masuk:'Paket Masuk',keluar:'Paket Keluar'};
+  for(const key of jenis) {
+    if(!map[key]) throw new Error('Jenis data export tidak dikenali.');
+    const {error}=await supabaseDb.from('log_aktivitas').insert({
+      aksi:'Export Excel',jenis_data:map[key],detail:'Export lengkap untuk izin hapus massal'
+    });
+    if(error) throw new Error('File Excel sudah dibuat, tetapi status export gagal dicatat: '+error.message);
+  }
 }
 async function statusKelayakanHapus(target) {
   if(!supabaseDb) throw new Error('Belum terhubung ke database.');
+  const {data:backup,error:backupError}=await supabaseDb.from('bolang_backup_status')
+    .select('last_success,last_result').eq('id',1).maybeSingle();
+  if(backupError) throw backupError;
+  if(!backup?.last_success) return {boleh:false,message:'Belum ada backup yang berhasil tercatat.'};
+  if(backup.last_result==='error') return {boleh:false,message:'Backup terakhir gagal. Penghapusan massal tetap dikunci.'};
+  const backupAt=new Date(backup.last_success);
   const jenis=target==='semua'?['masuk','keluar']:[target];
   const map={masuk:{table:'paket_masuk',label:'Paket Masuk'},keluar:{table:'paket_keluar',label:'Paket Keluar'}};
   for(const key of jenis) {
     if(!map[key]) return {boleh:false,message:'Jenis data tidak dikenali.'};
     const info=map[key];
-    const [{data:rows,error:rowError},{data:logs,error:logError}]=await Promise.all([
+    const [{data:rows,error:rowError},{data:edits,error:editError},{data:exports,error:exportError}]=await Promise.all([
       supabaseDb.from(info.table).select('created_at').order('created_at',{ascending:false}).limit(1),
-      supabaseDb.from('log_aktivitas').select('created_at').eq('jenis_data',info.label).eq('aksi','Edit').order('created_at',{ascending:false}).limit(1)
+      supabaseDb.from('log_aktivitas').select('created_at').eq('jenis_data',info.label).eq('aksi','Edit').order('created_at',{ascending:false}).limit(1),
+      supabaseDb.from('log_aktivitas').select('created_at').eq('jenis_data',info.label).eq('aksi','Export Excel').order('created_at',{ascending:false}).limit(1)
     ]);
     if(rowError) throw rowError;
-    if(logError) throw logError;
-    const latest=[rows?.[0]?.created_at,logs?.[0]?.created_at].filter(Boolean).sort((a,b)=>new Date(b)-new Date(a))[0] || null;
-    const exportedAt=sessionStorage.getItem('bolang_export_'+key);
-    if(latest && (!exportedAt || new Date(exportedAt)<new Date(latest))) {
-      return {boleh:false,message:info.label+' belum diexport lengkap setelah data/perubahan terbaru.'};
-    }
+    if(editError) throw editError;
+    if(exportError) throw exportError;
+    const latest=[rows?.[0]?.created_at,edits?.[0]?.created_at].filter(Boolean).sort((a,b)=>new Date(b)-new Date(a))[0] || null;
+    if(latest && new Date(latest)>backupAt)
+      return {boleh:false,message:info.label+' memiliki data/perubahan yang belum masuk ke backup terakhir.'};
+    const exportedAt=exports?.[0]?.created_at ? new Date(exports[0].created_at) : null;
+    if(!exportedAt || exportedAt<backupAt || (latest && exportedAt<new Date(latest)))
+      return {boleh:false,message:info.label+' belum diexport lengkap setelah backup terakhir.'};
   }
   return {boleh:true,message:''};
 }
@@ -5617,7 +5632,7 @@ async function periksaEksporSebelumHapus(target) {
   try {
     const hasil=await statusKelayakanHapus(target);
     if(hasil.boleh) return true;
-    alert('⛔ Penghapusan ditolak\n\n'+hasil.message+'\n\nKosongkan pencarian, klik “Export Excel”, pastikan file tersimpan di PC, lalu coba hapus kembali.');
+    alert('⛔ Penghapusan ditolak\n\n'+hasil.message+'\n\nPastikan backup berhasil lebih dahulu. Setelah itu kosongkan pencarian, klik “Export Excel”, pastikan file tersimpan, lalu coba hapus kembali.');
   } catch(e) {
     alert('⛔ Penghapusan ditolak\n\nStatus export tidak dapat dipastikan. Demi keamanan, data tidak dihapus.\n\nDetail: '+(e.message||e));
   }
