@@ -3253,10 +3253,100 @@
   }
 
   /* ── KIRIM DATA ─────────────────────────────────────────────── */
-  function kirimData(t) {
+  function pilihAksiDataLama(jenis) {
+    return new Promise(resolve => {
+      const nama = jenis === 'masuk' ? 'Paket Masuk' : 'Paket Keluar';
+      const overlay = document.createElement('div');
+      overlay.setAttribute('role','dialog');
+      overlay.setAttribute('aria-modal','true');
+      Object.assign(overlay.style,{
+        position:'fixed',inset:'0',zIndex:'10000',display:'flex',
+        alignItems:'center',justifyContent:'center',padding:'20px',
+        background:'rgba(15,23,42,.58)',backdropFilter:'blur(2px)'
+      });
+      const card = document.createElement('div');
+      Object.assign(card.style,{
+        width:'min(440px,100%)',background:'var(--surface,#fff)',
+        color:'var(--text,#222)',border:'2px solid var(--text,#222)',
+        borderRadius:'22px',padding:'22px',boxShadow:'7px 8px 0 rgba(0,0,0,.35)'
+      });
+      const title = document.createElement('h3');
+      title.textContent = 'Data lama belum dihapus';
+      title.style.margin = '0 0 10px';
+      const message = document.createElement('p');
+      message.textContent = nama+' sudah diexport, tetapi datanya masih tersimpan. Jika data baru dimasukkan sekarang, export sebelumnya tidak lagi menjadi salinan data terbaru.';
+      Object.assign(message.style,{margin:'0 0 18px',lineHeight:'1.55'});
+      const actions = document.createElement('div');
+      Object.assign(actions.style,{display:'grid',gap:'10px'});
+      const buatTombol = (teks,aksi,warna) => {
+        const b=document.createElement('button');
+        b.type='button'; b.textContent=teks;
+        Object.assign(b.style,{
+          minHeight:'46px',border:'2px solid var(--text,#222)',borderRadius:'13px',
+          background:warna,color:'#1f2937',fontWeight:'700',fontSize:'15px'
+        });
+        b.onclick=()=>selesai(aksi);
+        return b;
+      };
+      const selesai = aksi => { overlay.remove(); resolve(aksi); };
+      actions.append(
+        buatTombol('Tetap input','lanjut','#79d4e3'),
+        buatTombol('Hapus dulu','hapus','#fde7e7'),
+        buatTombol('Batal','batal','#f8fafc')
+      );
+      card.append(title,message,actions);
+      overlay.append(card);
+      overlay.addEventListener('click',e=>{ if(e.target===overlay) selesai('batal'); });
+      document.body.append(overlay);
+    });
+  }
+
+  async function peringatanDataLamaSebelumInput(jenis) {
+    if (!supabaseDb) return true;
+    const info = jenis === 'masuk'
+      ? {table:'paket_masuk',label:'Paket Masuk'}
+      : {table:'paket_keluar',label:'Paket Keluar'};
+    try {
+      const wita=new Date(Date.now()+8*60*60*1000);
+      const awalHari=Date.UTC(wita.getUTCFullYear(),wita.getUTCMonth(),wita.getUTCDate())-8*60*60*1000;
+      const awalSiklus=awalHari-12*60*60*1000;
+      const [{count,error:rowError},{data:exports,error:exportError}] = await Promise.all([
+        supabaseDb.from(info.table).select('id',{count:'exact',head:true}),
+        supabaseDb.from('log_aktivitas').select('created_at')
+          .eq('jenis_data',info.label).eq('aksi','Export Excel')
+          .order('created_at',{ascending:false}).limit(1)
+      ]);
+      if (rowError) throw rowError;
+      if (exportError) throw exportError;
+      const exportedAt=exports?.[0]?.created_at ? new Date(exports[0].created_at) : null;
+      if (!count || !exportedAt || exportedAt.getTime()<awalSiklus) return true;
+
+      const pilihan=await pilihAksiDataLama(jenis);
+      if (pilihan==='lanjut') return true;
+      if (pilihan==='hapus') {
+        document.getElementById('modalForm').classList.remove('open');
+        setPage('dashboard');
+        setFilter(jenis);
+        const cari=document.getElementById('inputCariTabel');
+        const cariAtas=document.getElementById('inputCariTopbar');
+        if (cari) cari.value='';
+        if (cariAtas) cariAtas.value='';
+        await handleDeleteAll();
+        document.getElementById('modalForm').classList.add('open');
+      }
+      return false;
+    } catch (e) {
+      console.warn('Pemeriksaan data lama gagal:',e);
+      return true;
+    }
+  }
+
+  async function kirimData(t) {
     const f        = document.getElementById(t === 'masuk' ? 'formMasuk' : 'formKeluar');
     const rowInput = document.getElementById(t === 'masuk' ? 'rowMasuk'  : 'rowKeluar');
     const btn      = document.getElementById(t === 'masuk' ? 'btnSaveMasuk' : 'btnSaveKeluar');
+
+    if (!rowInput.value && !(await peringatanDataLamaSebelumInput(t))) return;
 
     btn.disabled  = true;
     btn.innerHTML = '<span class="spinner"></span>Menyimpan…';
