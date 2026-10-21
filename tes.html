@@ -3310,16 +3310,22 @@
       const wita=new Date(Date.now()+8*60*60*1000);
       const awalHari=Date.UTC(wita.getUTCFullYear(),wita.getUTCMonth(),wita.getUTCDate())-8*60*60*1000;
       const awalSiklus=awalHari-12*60*60*1000;
-      const [{count,error:rowError},{data:exports,error:exportError}] = await Promise.all([
-        supabaseDb.from(info.table).select('id',{count:'exact',head:true}),
+      const [{data:rows,error:rowError},{data:exports,error:exportError}] = await Promise.all([
+        supabaseDb.from(info.table).select('created_at')
+          .order('created_at',{ascending:false}).limit(1),
         supabaseDb.from('log_aktivitas').select('created_at')
           .eq('jenis_data',info.label).eq('aksi','Export Excel')
           .order('created_at',{ascending:false}).limit(1)
       ]);
       if (rowError) throw rowError;
       if (exportError) throw exportError;
+      const latestAt=rows?.[0]?.created_at ? new Date(rows[0].created_at) : null;
       const exportedAt=exports?.[0]?.created_at ? new Date(exports[0].created_at) : null;
-      if (!count || !exportedAt || exportedAt.getTime()<awalSiklus) return true;
+      if (!latestAt || !exportedAt || exportedAt.getTime()<awalSiklus) return true;
+      // Peringatan hanya untuk input pertama setelah export. Sesudah pengguna
+      // memilih "Tetap input" dan data baru tersimpan, latestAt menjadi lebih
+      // baru dari exportedAt sehingga input berikutnya tidak diperingatkan lagi.
+      if (latestAt>exportedAt) return true;
 
       const pilihan=await pilihAksiDataLama(jenis);
       if (pilihan==='lanjut') return true;
